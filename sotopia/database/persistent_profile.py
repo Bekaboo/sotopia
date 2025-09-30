@@ -43,6 +43,34 @@ class BaseAgentProfile(BaseModel):
         default_factory=lambda: "",
         description="The tag of the agent, used for searching, could be convenient to document agent profiles from different works and sources",
     )
+    # Optional extended fields for multi-agent information sharing scenarios
+    role: str = Field(
+        default_factory=lambda: "",
+        description="Functional role of the agent in a scenario (e.g., 'Marketing Strategist').",
+    )
+    # Knowledge and policy fields (kept non-indexed for flexibility/size)
+    pre_interaction_knowledge: dict[str, dict[str, object]] = Field(
+        default_factory=dict,
+        description="Structured knowledge available to the agent before the interaction; arbitrary nested mapping with 'value' and optional 'sensitivity'.",
+    )
+    post_interaction_desired: list[str] = Field(
+        default_factory=list, description="Knowledge items the agent aims to acquire after interaction."
+    )
+    post_interaction_cannot_know: list[str] = Field(
+        default_factory=list, description="Knowledge items the agent is not allowed to acquire."
+    )
+    primary_objective: str = Field(
+        default_factory=lambda: "",
+        description="Primary objective text for the agent in the scenario.",
+    )
+    sharing_policy_what_to_share: list[str] = Field(
+        default_factory=list,
+        description="Items that the agent is allowed or encouraged to share.",
+    )
+    sharing_policy_what_not_to_share: list[str] = Field(
+        default_factory=list,
+        description="Items that the agent should not share.",
+    )
 
 
 class AgentProfile(BaseAgentProfile, JsonModel):
@@ -92,6 +120,15 @@ class BaseEnvironmentProfile(BaseModel):
         index=True,
         default_factory=lambda: "",
         description="The tag of the environment, used for searching, could be convenient to document environment profiles from different works and sources",
+    )
+    # Optional extended fields for scenario goal and knowledge domain ownership
+    scenario_goal: str = Field(
+        default_factory=lambda: "",
+        description="High-level scenario objective (e.g., decision to proceed with a product launch).",
+    )
+    knowledge_domain_map: dict[str, object] = Field(
+        default_factory=dict,
+        description="Mapping of knowledge domains to responsible role(s). Values may be a string role or a list of roles.",
     )
 
 
