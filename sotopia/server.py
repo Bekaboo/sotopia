@@ -191,6 +191,12 @@ async def arun_one_episode(
                 ___,
                 info,
             ) = await env.astep(agent_messages)
+
+            # Inject explicit turn marker into transcript for downstream tools
+            # so turn-based metrics can compute deltas reliably.
+            messages.append(
+                [("Environment", "All", SimpleMessage(message=f"Turn #{env.turn_number}"))]
+            )
             messages.append(
                 [
                     ("Environment", agent_name, environment_messages[agent_name])
