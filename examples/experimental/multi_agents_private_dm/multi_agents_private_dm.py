@@ -157,10 +157,12 @@ async def main() -> None:
     # Test with 3 agents using multi-agent support
     await run_async_server(
         model_dict={
-            "env": "gpt-4o",
-            "agent1": "gpt-4o",
-            "agent2": "gpt-4o",
-            "agent3": "gpt-4o",
+            # Use the /responses route (required for reasoning models to get reasoning content)
+            # https://docs.litellm.ai/docs/providers/openai#getting-reasoning-content-in-chatcompletions
+            "env": "openai/responses/gpt-5",
+            "agent1": "openai/responses/gpt-5",
+            "agent2": "openai/responses/gpt-5",
+            "agent3": "openai/responses/gpt-5",
         },
         sampler=sampler,
         # Allow multiple agents to act in same turn for private messaging
