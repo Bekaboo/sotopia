@@ -354,6 +354,7 @@ async def agenerate_action(
     script_like: bool = False,
     bad_output_process_model: str | None = None,
     use_fixed_model_version: bool = True,
+    structured_output:  bool = False,
 ) -> AgentAction:
     """
     Using langchain to generate an example episode
@@ -444,7 +445,7 @@ async def agenerate_action(
             ),
             output_parser=PydanticOutputParser(pydantic_object=AgentAction),
             temperature=temperature,
-            structured_output=True,
+            structured_output=structured_output,
             bad_output_process_model=bad_output_process_model,
             use_fixed_model_version=use_fixed_model_version,
         )
