@@ -11,6 +11,7 @@ from itertools import chain
 from collections import defaultdict
 from typing import OrderedDict
 
+from logging import FileHandler
 from rich.logging import RichHandler
 
 from tqdm import tqdm
@@ -36,7 +37,6 @@ from sotopia.samplers import (
     EnvAgentCombo,
 )
 from sotopia.server import run_async_server
-from sotopia.logging import FileHandler
 
 import typer
 from pathlib import Path

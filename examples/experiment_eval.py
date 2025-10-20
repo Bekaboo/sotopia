@@ -3,6 +3,7 @@ import logging
 import os
 import subprocess
 from datetime import datetime
+from logging import FileHandler
 from typing import Any, Generator, cast
 
 import gin
@@ -32,7 +33,6 @@ from sotopia.samplers import (
     EnvAgentCombo,
 )
 from sotopia.server import run_async_server
-from sotopia.logging import FileHandler
 from sotopia_conf.gin_utils import parse_gin_flags, run
 # from sotopia.database import EvaluationDimensionBuilder
 

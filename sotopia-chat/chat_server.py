@@ -5,6 +5,7 @@ import subprocess
 from asyncio import gather
 from asyncio import run as aiorun
 from datetime import datetime
+from logging import FileHandler
 from typing import Literal, cast
 
 import redis.asyncio as redis
@@ -25,9 +26,8 @@ from sotopia.envs.evaluators import (
 )
 from sotopia.envs.parallel import ParallelSotopiaEnv
 from sotopia.server import arun_one_episode
-from sotopia.envs.evaluators import EvaluationForAgents
-from sotopia.database import SotopiaDimensions
-from sotopia.logging import FileHandler
+
+from sotopia.envs.evaluators import SotopiaDimensions, EvaluationForTwoAgents
 
 process = subprocess.Popen(
     ["git", "rev-parse", "HEAD"], shell=False, stdout=subprocess.PIPE

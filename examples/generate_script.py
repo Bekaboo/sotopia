@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+from logging import FileHandler
 from typing import Any
 
 import gin
@@ -10,11 +11,9 @@ from rich import print
 from rich.logging import RichHandler
 from tqdm import tqdm
 from tqdm.asyncio import tqdm_asyncio
-
 from sotopia.messages.message_classes import AgentAction, Observation
 from sotopia.samplers import EnvAgentCombo
 from sotopia.server import arun_one_script, run_async_server
-from sotopia.logging import FileHandler
 from sotopia_conf.gin_utils import parse_gin_flags, run
 
 # date and message only

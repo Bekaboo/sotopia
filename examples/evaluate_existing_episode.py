@@ -2,6 +2,7 @@ import asyncio
 import logging
 import subprocess
 from datetime import datetime
+from logging import FileHandler
 
 import typer
 from rich.logging import RichHandler
@@ -10,7 +11,6 @@ from tqdm.asyncio import tqdm_asyncio
 
 from sotopia.database.logs import AnnotationForEpisode, EpisodeLog
 from sotopia.server import aevaluate_one_episode
-from sotopia.logging import FileHandler
 
 # date and message only
 FORMAT = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
