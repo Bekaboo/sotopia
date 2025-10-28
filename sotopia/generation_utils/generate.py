@@ -194,6 +194,7 @@ async def agenerate(
         call_kwargs = dict(completion_kwargs)
         if send_temperature:
             call_kwargs["temperature"] = effective_temperature
+        log.info(f"call_kwargs: {call_kwargs}")
         try:
             response = await acompletion(**call_kwargs)
             if send_temperature:
@@ -231,7 +232,6 @@ async def agenerate(
             model=model_name,
             messages=messages,
             response_format=output_parser.pydantic_object,
-            drop_params=True,  # drop params to avoid model error if the model does not support it
             base_url=base_url,
             api_key=api_key,
         )
@@ -249,11 +249,12 @@ async def agenerate(
     completion_kwargs = dict(
         model=model_name,
         messages=messages,
-        drop_params=True,
         api_base=base_url,
         api_key=api_key,
+        reasoning_effort="low",
     )
     response = await _call_with_retry(completion_kwargs)
+    log.info(f"Response: {response}")
     result = response.choices[0].message.content
 
     try:
