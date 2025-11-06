@@ -251,10 +251,11 @@ async def agenerate(
         messages=messages,
         api_base=base_url,
         api_key=api_key,
-        reasoning_effort="low",
+        reasoning_effort="high",
     )
     response = await _call_with_retry(completion_kwargs)
-    log.info(f"Response: {response}")
+    log.info("Response: %s", response)
+    log.info("Reasoning: %s", response.choices[0].message.get("reasoning_content"))
     result = response.choices[0].message.content
 
     try:
@@ -434,6 +435,8 @@ async def agenerate_action(
 
                 Your action should follow the given format:
                 {format_instructions}
+
+                Think about how you should react.
             """
         return await agenerate(
             model_name=model_name,
