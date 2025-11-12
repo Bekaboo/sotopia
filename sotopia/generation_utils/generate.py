@@ -1,5 +1,7 @@
 import logging
 import os
+from datetime import datetime
+import json
 from litellm import acompletion
 from litellm.utils import supports_response_schema
 from litellm.litellm_core_utils.get_supported_openai_params import (
@@ -130,6 +132,25 @@ async def agenerate(
             ), "response_schema is not supported in this model"
         messages = [{"role": "user", "content": template}]
 
+        # Optional prompt logging for debugging (enabled via env var)
+        if os.environ.get("SOTOPIA_LOG_PROMPTS", "").lower() in {"1", "true", "yes"}:
+            log_dir = os.environ.get("SOTOPIA_PROMPT_LOG_DIR", "./logs/prompt_requests")
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+                agent_name = input_values.get("agent", "")
+                safe_model = model_name.replace("/", "_")
+                ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+                fname = f"{ts}_{safe_model}_{agent_name or 'request'}.txt"
+                fpath = os.path.join(log_dir, fname)
+                with open(fpath, "w", encoding="utf-8") as f:
+                    f.write(f"UTC: {ts}\nModel: {model_name}\nStructured: {structured_output}\nAgent: {agent_name}\n")
+                    f.write("\n=== TEMPLATE (final) ===\n")
+                    f.write(template)
+                    f.write("\n\n=== MESSAGES (JSON) ===\n")
+                    f.write(json.dumps(messages, ensure_ascii=False, indent=2))
+            except Exception as e:
+                log.debug(f"Failed to write prompt log: {e}")
+
         assert isinstance(
             output_parser, PydanticOutputParser
         ), "structured output only supported in PydanticOutputParser"
@@ -151,6 +172,25 @@ async def agenerate(
         return cast(OutputType, output_parser.parse(result))
 
     messages = [{"role": "user", "content": template}]
+
+    # Optional prompt logging for debugging (enabled via env var)
+    if os.environ.get("SOTOPIA_LOG_PROMPTS", "").lower() in {"1", "true", "yes"}:
+        log_dir = os.environ.get("SOTOPIA_PROMPT_LOG_DIR", "./logs/prompt_requests")
+        try:
+            os.makedirs(log_dir, exist_ok=True)
+            agent_name = input_values.get("agent", "")
+            safe_model = model_name.replace("/", "_")
+            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S_%f")
+            fname = f"{ts}_{safe_model}_{agent_name or 'request'}.txt"
+            fpath = os.path.join(log_dir, fname)
+            with open(fpath, "w", encoding="utf-8") as f:
+                f.write(f"UTC: {ts}\nModel: {model_name}\nStructured: {structured_output}\nAgent: {agent_name}\n")
+                f.write("\n=== TEMPLATE (final) ===\n")
+                f.write(template)
+                f.write("\n\n=== MESSAGES (JSON) ===\n")
+                f.write(json.dumps(messages, ensure_ascii=False, indent=2))
+        except Exception as e:
+            log.debug(f"Failed to write prompt log: {e}")
 
     response = await acompletion(
         model=model_name,
@@ -260,6 +300,7 @@ async def agenerate_action(
     script_like: bool = False,
     bad_output_process_model: str | None = None,
     use_fixed_model_version: bool = True,
+    context_snapshot: str = "",
 ) -> AgentAction:
     """
     Using langchain to generate an example episode
@@ -288,19 +329,32 @@ async def agenerate_action(
             # Normal case, model as agent
             template = """
                 Imagine you are {agent}, your task is to act/speak as {agent} would, keeping in mind {agent}'s social goal.
-                You can find {agent}'s goal (or background) in the 'Here is the context of the interaction' field.
+                You can find {agent}'s goal (or background) in the 'Agent context' section.
                 Note that {agent}'s goal is only visible to you.
                 You should try your best to achieve {agent}'s goal in a way that align with their character traits.
                 Additionally, maintaining the conversation's naturalness and realism is essential (e.g., do not repeat what other people has already said before).
-                {history}.
+
+                Agent context (facts and policy):
+                {context_snapshot}
+
+                General rules (follow strictly):
+                - Ground only in your pre_interaction_knowledge or explicit messages you received here; do not invent facts or participants.
+                - If something is unknown, say "unknown" and take one concrete next step (answer what you can or make a parameter-complete ask).
+                - Channel choice: default to PUBLIC for non‑sensitive content; use PRIVATE (`to`) when the topic is sensitive or may be confidential.
+                - Never use to=['ALL']; omit `to` entirely for PUBLIC messages.
+                - Only share domain information when you were explicitly asked (your name/role mentioned or you are in `to`) or there is a clearly pending question to you within the last 2 turns; otherwise, do not proactively disclose.
+                - Ask at most one question; route to the single most relevant owner.
+                - If asked and permitted, share only minimal canonical facts; never disclose items in `what_not_to_share`; if asked, reply "cannot disclose".
+                - Answer directed questions to you before asking; avoid repeating the same ask within the last 2 turns.
+                - Keep to one short paragraph; no small talk; no repetition.
+
+                Context and history:
+                {history}
                 You are at Turn #{turn_number}. Your available action types are
                 {action_list}.
                 Participants: as listed in the initial background under "Participants". Use exact names when addressing others.
                 Note: You can "leave" this conversation if 1. you have achieved your social goals, 2. this conversation makes you uncomfortable, 3. you find it uninteresting/you lose your patience, 4. or for other reasons you want to leave. If you have already gathered all information needed to complete your objective or have no further contribution, choose the "leave" action to exit.
 
-                Please only generate a JSON string including the action type, the recipients (the `to` field), and the argument.
-                Note: If you set the `to` field, the action becomes "private". Private messages are visible only to the recipients. The recipientss must be a subset of the participants, excluding yourself.
-                      If you are speaking/acting to public, you don't need to set the `to` field.
                 Your action should follow the given format:
                 {format_instructions}
             """
@@ -312,6 +366,7 @@ async def agenerate_action(
                 turn_number=str(turn_number),
                 history=history,
                 action_list=" ".join(action_types),
+                context_snapshot=context_snapshot,
             ),
             output_parser=PydanticOutputParser(pydantic_object=AgentAction),
             temperature=temperature,

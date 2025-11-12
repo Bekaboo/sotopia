@@ -43,13 +43,20 @@ def _actions_to_natural_language_for_viewer(
       - Private actions (with 'to'): visible only to sender and recipients
     """
     parts: list[str] = []
+    def _norm(s: str | None) -> str:
+        return " ".join((s or "").split())
+
+    nviewer = _norm(viewer)
+
     for sender, action in actions.items():
         if action.action_type == "none":
             continue
 
         to_list = action.to or []
         is_public = len(to_list) == 0
-        can_see = is_public or (viewer in to_list) or (viewer == sender)
+        # Normalize names to avoid mismatches due to stray spaces
+        nto_list = [_norm(r) for r in to_list]
+        can_see = is_public or (nviewer in nto_list) or (nviewer == _norm(sender))
 
         if not can_see:
             continue

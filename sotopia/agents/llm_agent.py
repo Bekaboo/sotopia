@@ -1,4 +1,6 @@
 import asyncio
+import os
+import json
 from concurrent.futures import ThreadPoolExecutor
 from typing import cast
 
@@ -36,6 +38,13 @@ class LLMAgent(BaseAgent[Observation, AgentAction]):
         )
         self.model_name = model_name
         self.script_like = script_like
+        # configurable per-process timeout for action generation (seconds)
+        try:
+            self._action_timeout_s: float = float(
+                os.environ.get("SOTOPIA_ACTION_TIMEOUT", "60")
+            )
+        except Exception:
+            self._action_timeout_s = 60.0
 
     @property
     def goal(self) -> str:
@@ -55,7 +64,13 @@ class LLMAgent(BaseAgent[Observation, AgentAction]):
         raise Exception("Sync act method is deprecated. Use aact instead.")
 
     async def aact(self, obs: Observation) -> AgentAction:
-        self.recv_message("Environment", obs)
+        # Avoid duplicating the same environment observation in the inbox
+        if not (
+            self.inbox
+            and isinstance(self.inbox[-1][1], Observation)
+            and cast(Observation, self.inbox[-1][1]).turn_number == obs.turn_number
+        ):
+            self.recv_message("Environment", obs)
 
         if self._goal is None:
             self._goal = await agenerate_goal(
@@ -79,15 +94,119 @@ class LLMAgent(BaseAgent[Observation, AgentAction]):
                     )
                 )
 
-            action = await agenerate_action(
-                self.model_name,
-                history=history,
-                turn_number=obs.turn_number,
-                action_types=obs.available_actions,
-                agent=self.agent_name,
-                goal=self.goal,
-                script_like=self.script_like,
-            )
+            # Sanitize verbose background duplication: drop per-agent background/goal lines
+            # while preserving scenario and knowledge domain map.
+            def _sanitize(h: str) -> str:
+                lines = h.splitlines()
+                filtered: list[str] = []
+                seen_context = False
+                skip_context_block = False
+                skip_until_blank = False
+
+                def _starts_context(s: str) -> bool:
+                    return s.strip().startswith("Here is the context of this interaction:")
+
+                def _is_turn_boundary(s: str) -> bool:
+                    s2 = s.strip()
+                    return s2.startswith("Turn #") or s2.startswith("You are at Turn #")
+
+                for ln in lines:
+                    s = ln.strip()
+                    # Drop per-agent bios and goal lines entirely
+                    if "'s background:" in ln or "'s goal:" in ln:
+                        continue
+
+                    # Drop verbose sections from background to avoid duplication with Agent context
+                    if s in {
+                        "PRIMARY OBJECTIVE:",
+                        "PRE-INTERACTION KNOWLEDGE YOU CURRENTLY HOLD:",
+                        "SHARING POLICY:",
+                        "REMINDER:",
+                        "KNOWLEDGE DOMAIN OWNERSHIP (all agents can see this):",
+                    }:
+                        skip_until_blank = True
+                        continue
+                    if skip_until_blank:
+                        if s == "":
+                            skip_until_blank = False
+                        continue
+
+                    # Keep only the first context block; skip later duplicates until turn boundary
+                    if _starts_context(ln):
+                        if seen_context:
+                            skip_context_block = True
+                            continue
+                        else:
+                            seen_context = True
+                            filtered.append(ln)
+                            continue
+                    if skip_context_block:
+                        if _is_turn_boundary(ln) or s == "Conversation Starts:" or s == "":
+                            skip_context_block = False
+                            # include the boundary line
+                            filtered.append(ln)
+                        # else keep skipping
+                        continue
+
+                    filtered.append(ln)
+
+                return "\n".join(filtered)
+
+            history = _sanitize(history)
+
+            # Build agent context snapshot for every turn
+            try:
+                pre_knowledge = (
+                    self.profile.pre_interaction_knowledge
+                    if hasattr(self.profile, "pre_interaction_knowledge")
+                    else {}
+                )
+                to_share = (
+                    self.profile.sharing_policy_what_to_share
+                    if hasattr(self.profile, "sharing_policy_what_to_share")
+                    else []
+                )
+                not_to_share = (
+                    self.profile.sharing_policy_what_not_to_share
+                    if hasattr(self.profile, "sharing_policy_what_not_to_share")
+                    else []
+                )
+                primary_objective = (
+                    self.profile.primary_objective
+                    if hasattr(self.profile, "primary_objective")
+                    else ""
+                )
+                role = self.profile.role if hasattr(self.profile, "role") else self.agent_name
+                context_snapshot = (
+                    "AGENT CONTEXT\n"
+                    f"Role: {role}\n"
+                    f"Primary Objective: {primary_objective or '(none)'}\n"
+                    "Sharing Policy:\n"
+                    f"  - what_to_share: {json.dumps(to_share, ensure_ascii=False)}\n"
+                    f"  - what_not_to_share: {json.dumps(not_to_share, ensure_ascii=False)}\n"
+                    "Pre-Interaction Knowledge (JSON):\n"
+                    f"{json.dumps(pre_knowledge, ensure_ascii=False, indent=2)}\n"
+                )
+            except Exception:
+                context_snapshot = ""
+
+            try:
+                action = await asyncio.wait_for(
+                    agenerate_action(
+                        self.model_name,
+                        history=history,
+                        turn_number=obs.turn_number,
+                        action_types=obs.available_actions,
+                        agent=self.agent_name,
+                        goal=self.goal,
+                        script_like=self.script_like,
+                        context_snapshot=context_snapshot,
+                    ),
+                    timeout=self._action_timeout_s,
+                )
+            except asyncio.TimeoutError:
+                # Fall back gracefully on timeout
+                return AgentAction(action_type="none", argument="")
             # Temporary fix for mixtral-moe model for incorrect generation format
             if "Mixtral-8x7B-Instruct-v0.1" in self.model_name:
                 current_agent = self.agent_name

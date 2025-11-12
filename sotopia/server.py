@@ -149,6 +149,10 @@ async def arun_one_episode(
                 for agent_name in env.agents
             ]
         )
+        # Ensure each agent receives the initial background observation so their
+        # first prompt history always includes context, even if they don't act in Turn #0.
+        for agent_name in env.agents:
+            agents[agent_name].recv_message("Environment", environment_messages[agent_name])
         yield messages
 
         # set goal for agents
@@ -159,12 +163,25 @@ async def arun_one_episode(
         while not done:
             # gather agent messages
             agent_messages: dict[str, AgentAction] = dict()
-            actions = await asyncio.gather(
-                *[
-                    agents[agent_name].aact(environment_messages[agent_name])
-                    for agent_name in env.agents
-                ]
+            # Only generate for agents allowed to act; others are forced to "none"
+            allowed_mask = (
+                env.action_mask if env.action_mask and len(env.action_mask) == len(env.agents) else None
             )
+            pending_tasks: list[tuple[int, asyncio.Task[AgentAction]]] = []
+            actions: list[AgentAction | None] = [None] * len(env.agents)
+            for idx, agent_name in enumerate(env.agents):
+                if allowed_mask is not None and not allowed_mask[idx]:
+                    actions[idx] = AgentAction(action_type="none", argument="")
+                else:
+                    task = asyncio.create_task(
+                        agents[agent_name].aact(environment_messages[agent_name])
+                    )
+                    pending_tasks.append((idx, task))
+
+            if pending_tasks:
+                results = await asyncio.gather(*[t for _, t in pending_tasks])
+                for (idx, _), res in zip(pending_tasks, results):
+                    actions[idx] = res
             if script_like:
                 # manually mask one message
                 agent_mask = env.action_mask
@@ -176,7 +193,8 @@ async def arun_one_episode(
 
             # actions = cast(list[AgentAction], actions)
             for idx, agent_name in enumerate(env.agents):
-                agent_messages[agent_name] = actions[idx]
+                # type: ignore[arg-type]
+                agent_messages[agent_name] = actions[idx] if actions[idx] is not None else AgentAction(action_type="none", argument="")
 
                 # Publicly log only non-private actions; default is public
                 messages[-1].append(
@@ -203,6 +221,12 @@ async def arun_one_episode(
                     for agent_name in env.agents
                 ]
             )
+            # Feed observations for this turn to every agent so each agent's inbox
+            # reflects all visible messages every turn, even when they are not acting.
+            for agent_name in env.agents:
+                agents[agent_name].recv_message(
+                    "Environment", environment_messages[agent_name]
+                )
             yield messages
             rewards.append([rewards_in_turn[agent_name] for agent_name in env.agents])
             reasons.append(
