@@ -64,6 +64,39 @@ def _actions_to_natural_language_for_viewer(
         parts.append(f"{sender} {action.to_natural_language()}")
     return ";".join(parts)
 
+def _visible_actions_for_viewer(
+    actions: dict[str, AgentAction], viewer: str
+) -> list[tuple[str, AgentAction]]:
+    """
+    Return the list of (sender, action) that are visible to `viewer`,
+    using the same visibility rule as _actions_to_natural_language_for_viewer:
+
+      - Public actions (no 'to'): visible to everyone
+      - Private actions (with 'to'): visible only to sender and recipients
+    """
+    visible: list[tuple[str, AgentAction]] = []
+
+    def _norm(s: str | None) -> str:
+        return " ".join((s or "").split())
+
+    nviewer = _norm(viewer)
+
+    for sender, action in actions.items():
+        if action.action_type == "none":
+            continue
+
+        to_list = action.to or []
+        is_public = len(to_list) == 0
+        nto_list = [_norm(r) for r in to_list]
+        can_see = is_public or (nviewer in nto_list) or (nviewer == _norm(sender))
+
+        if not can_see:
+            continue
+
+        visible.append((sender, action))
+    return visible
+
+
 
 def _map_gender_to_adj(gender: str) -> str:
     gender_to_adj = {
@@ -163,6 +196,7 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
         uuid_str: str | None = None,
         env_profile: EnvironmentProfile | None = None,
         background_class: Optional[Type[TBackground]] = None,
+        tom_coach: Any | None = None,  # new add 
     ) -> None:
         """A sotopia environment for parallel agents.
 
@@ -194,6 +228,10 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
         self.evaluators = evaluators
         self.terminal_evaluators = terminal_evaluators
         self.model_name = model_name
+        self.tom_coach = tom_coach
+        # will be filled in reset()
+        self._agent_profiles_by_name: dict[str, AgentProfile] = {}
+
         # if an environment profile is provided, use it
         assert (
             env_profile or uuid_str
@@ -238,6 +276,12 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
             assert len(agents) >= 2, f"At least 2 agents required, got {len(agents)}"
             agent_names = list(agents.keys())
             agent_goals = self.profile.agent_goals
+
+            # store profiles so ToM coach can see primary_objective/role
+            self._agent_profiles_by_name = {
+                name: agents[name].profile for name in agent_names
+            }
+
             assert (
                 len(agent_goals) >= 2
             ), f"At least 2 agent goals required, got {len(agent_goals)}"
@@ -472,11 +516,18 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
             self.recv_message(agent, action, private=is_private)
 
         # Synchronous evaluators in step
+        # Only pass actual AgentAction messages to evaluators
+        msg_for_eval = [
+            (sender, msg)
+            for (sender, msg) in self.inbox
+            if isinstance(msg, AgentAction)
+        ]
+
         response = unweighted_aggregate_evaluate(
             list(
                 itertools.chain(
                     *(
-                        evaluator(turn_number=self.turn_number, messages=self.inbox)
+                        evaluator(turn_number=self.turn_number, messages=msg_for_eval)
                         for evaluator in self.evaluators
                     )
                 )
@@ -560,6 +611,12 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
             self.recv_message(agent, action, private=is_private)
 
         # asyns evaluators
+        # Only pass actual AgentAction messages to evaluators
+        msg_for_eval = [
+            (sender, msg)
+            for (sender, msg) in self.inbox
+            if isinstance(msg, AgentAction)
+        ]
         response = unweighted_aggregate_evaluate(
             list(
                 itertools.chain(
@@ -567,7 +624,7 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
                         *[
                             evaluator.__acall__(
                                 turn_number=self.turn_number,
-                                messages=self.inbox,
+                                messages=msg_for_eval,
                             )
                             for evaluator in self.evaluators
                         ]
@@ -584,7 +641,7 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
                             *[
                                 evaluator.__acall__(
                                     turn_number=self.turn_number,
-                                    messages=self.inbox,
+                                    messages=msg_for_eval,
                                 )
                                 for evaluator in self.terminal_evaluators
                             ]
@@ -599,6 +656,52 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
                 response.comments += terminal_response.comments
             elif terminal_response.comments:
                 response.comments = terminal_response.comments
+
+        # === ToM coach: compute per-agent notes based on last visible message ===
+        tom_notes: dict[str, str] = {}
+        if self.tom_coach is not None and self._agent_profiles_by_name:
+            for agent_name in self.agents:
+                # Collect actions this agent can see
+                visible = _visible_actions_for_viewer(complied_actions, agent_name)
+                # Consider only messages from other agents
+                visible = [(s, a) for (s, a) in visible if s != agent_name]
+                if not visible:
+                    continue
+                last_sender, last_action = visible[-1]
+                # Skip if it's effectively 'none'
+                if last_action.action_type == "none":
+                    continue
+
+                profile = self._agent_profiles_by_name.get(agent_name)
+                if profile is None:
+                    continue
+
+                # Natural language text of the last visible action
+                message_text = last_action.to_natural_language()
+
+                try:
+                    tom_note = await self.tom_coach.infer(
+                        perspective_profile=profile,
+                        env_profile=self.profile,
+                        sender_role=last_sender,
+                        message_text=message_text,
+                    )
+                except Exception:
+                    # fail-open: skip ToM if something goes wrong
+                    continue
+
+                if not tom_note:
+                    continue
+
+                tom_notes[agent_name] = tom_note
+
+                # Log ToM note in environment transcript as a separate message
+                self.recv_message(
+                    f"ToM Coach for {agent_name}",
+                    SimpleMessage(message=tom_note),
+                )
+        # === end ToM coach section ===
+
 
         self.action_mask = [False for _ in self.agents]
         if self.action_order == "round-robin":
@@ -627,6 +730,15 @@ class ParallelSotopiaEnv(ParallelEnv[str, Observation, AgentAction], MessengerMi
             obs_for_viewer = _actions_to_natural_language_for_viewer(
                 complied_actions, agent_name
             )
+            
+            # If we have a ToM note for this agent, append it as guidance
+            tom_note = tom_notes.get(agent_name)
+            if tom_note:
+                if obs_for_viewer:
+                    obs_for_viewer = obs_for_viewer + "\n\n" + tom_note
+                else:
+                    obs_for_viewer = tom_note
+            
             observations[agent_name] = Observation(
                 last_turn=render_text_for_agent(obs_for_viewer, agent_id=i),
                 turn_number=self.turn_number,

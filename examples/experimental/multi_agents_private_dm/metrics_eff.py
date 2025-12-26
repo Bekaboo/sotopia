@@ -10,9 +10,11 @@ Pipeline (no heuristics):
   turn where that agent "received" the item (visible to them), or mark as not
   received. Include evidence: utterance indices and short quotes.
 - Compute per agent:
-    times = [turn_received for each desired item (or T_max + 1 if never)]
+    times = [t_i for each desired item], where
+        t_i = turn_received + 1     if the item is received
+        t_i = T_max + 1             if the item is never received
     median_time = median(times) if times else 1
-    Eff = 1 - ((median_time - 1) / (T_max - 1))  (with safe edge handling)
+    Eff = 1 - ((median_time - 1) / T_max)  (with safe edge handling)
 - Persist JSON and a human-readable summary.
 """
 from __future__ import annotations
@@ -54,13 +56,22 @@ def _compute_tmax(utterances: list[dict[str, Any]]) -> int:
     return max(turns) + 1
 
 
+# def _eff_from_times(times: list[int], t_max: int) -> float:
+#     if not times:
+#         return 1.0
+#     med = statistics.median(times)
+#     if t_max <= 1:
+#         return 1.0 if med <= 1 else 0.0
+#     return 1.0 - ((med - 1.0) / (t_max - 1.0))
+
 def _eff_from_times(times: list[int], t_max: int) -> float:
     if not times:
         return 1.0
     med = statistics.median(times)
-    if t_max <= 1:
-        return 1.0 if med <= 1 else 0.0
-    return 1.0 - ((med - 1.0) / (t_max - 1.0))
+    if t_max <= 0:
+        return 1.0
+    eff = 1.0 - ((med - 1.0) / float(t_max))
+    return max(0.0, min(1.0, eff))
 
 
 async def compute_and_save_eff(
@@ -179,7 +190,9 @@ Return JSON with this Pydantic schema:
         "agents": {},
     }
     lines: list[str] = []
-    lines.append("Efficiency (Eff): 1 - ((median(T_i) - 1) / (T_max - 1))\n")
+    # lines.append("Efficiency (Eff): 1 - ((median(T_i) - 1) / (T_max - 1))\n")
+    lines.append("Efficiency (Eff): 1 - ((median(t_i) - 1) / T_max), where t_i in [1..T_max+1]\n")
+
 
     for agent_r in output.agents:
         # Construct times with T_max+1 penalty when not received
@@ -192,7 +205,7 @@ Return JSON with this Pydantic schema:
         for item_name in desired_items_list:
             entry = llm_map.get(item_name)
             if entry and entry.received and isinstance(entry.turn_received, int):
-                times.append(entry.turn_received)
+                times.append(entry.turn_received + 1)
                 details.append(
                     {
                         "name": item_name,

@@ -11,6 +11,8 @@ the simulations and writes transcripts and per-agent views.
 """
 from __future__ import annotations
 
+import datetime
+
 import argparse
 import asyncio
 import json
@@ -30,6 +32,8 @@ from metrics_eff import compute_and_save_eff
 from metrics_cpv import compute_and_save_cpv
 from metrics_composite import compute_and_save_composite
 from aggregate_new_llm import aggregate_new_llm_metrics
+from sotopia.generation_utils.generate import agenerate_goal
+
 
 
 class KnowledgeItem(TypedDict, total=False):
@@ -50,6 +54,38 @@ class ScenarioSpec(TypedDict):
     scenario_goal: str
     knowledge_domain_map: dict[str, Any]
     agents: list[AgentSpec]
+
+class ToMCoach:
+    def __init__(self, model_name: str):
+        self.model_name = model_name
+
+    async def infer(
+        self,
+        *,
+        perspective_profile: AgentProfile,
+        env_profile: EnvironmentProfile,
+        sender_role: str,
+        message_text: str,
+    ) -> str:
+        perspective_role = perspective_profile.role
+        primary_obj = perspective_profile.primary_objective or ""
+        kd_map = env_profile.knowledge_domain_map or {}
+
+        prompt = build_tom_prompt_with_history(
+            perspective_role=perspective_role,
+            perspective_primary_objective=primary_obj,
+            knowledge_domain_map=kd_map,
+            sender_role=sender_role,
+            message_text=message_text,
+        )
+
+        # Reuse Sotopia's existing LLM helper
+        tom_note = await agenerate_goal(
+            self.model_name,
+            background=prompt,
+        )
+        # Make sure it is clearly marked when it appears in history
+        return "[ToM Coach Note]\n" + tom_note.strip()
 
 
 def _norm_name(name: str | None) -> str:
@@ -145,6 +181,7 @@ def build_env_agent_combo_for_spec(
     action_order: Literal["simultaneous", "round-robin", "random"] = "round-robin",
     judge_model: Optional[str] = None,
     disable_terminal_eval: bool = False,
+    tom_coach_model: Optional[str] = None,
 ) -> tuple[ParallelSotopiaEnv, list[LLMAgent]]:
     tag = f"scenario_{spec['scenario_id']}"
 
@@ -156,6 +193,15 @@ def build_env_agent_combo_for_spec(
         agent_goals.append(build_goal_text(agent, knowledge_domain_map=spec["knowledge_domain_map"]))
 
     env = to_environment_profile(spec, agent_goals, tag=tag)
+    
+    # create the ToM coach instance (or None)
+    tom_coach = ToMCoach(tom_coach_model) if tom_coach_model is not None else None
+
+    if tom_coach is None:
+        print(f"[DEBUG] ToM Coach: DISABLED for scenario {spec['scenario_id']}")
+    else:
+        print(f"[DEBUG] ToM Coach: ENABLED with model={tom_coach_model} for scenario {spec['scenario_id']}")
+
 
     sim_env = ParallelSotopiaEnv(
         model_name=env_model,
@@ -167,10 +213,126 @@ def build_env_agent_combo_for_spec(
             else [EpisodeLLMEvaluator(env_model, EvaluationForAgents[SotopiaDimensions])]
         ),
         env_profile=env,
+        tom_coach=tom_coach,   # new
     )
     agents_list = [LLMAgent(agent_profile=ap, model_name=agent_model) for ap in agent_profiles]
     return sim_env, agents_list
 
+# def build_tom_prompt(
+#     *,
+#     perspective_role: str,
+#     perspective_primary_objective: str,
+#     knowledge_domain_map: dict[str, Any],
+#     sender_role: str,
+#     message_text: str,
+# ) -> str:
+#     """
+#     Build a Theory-of-Mind prompt from the perspective of `perspective_role`
+#     about the latest message from `sender_role`.
+#     The coach is NOT given sharing policies or secrets, only:
+#       - the receiver's primary objective
+#       - the global knowledge_domain_map
+#       - the content of the message and sender identity
+#     """
+#     kd_json = json.dumps(knowledge_domain_map, indent=2, ensure_ascii=False)
+
+#     return f"""You are a Theory-of-Mind analyst.
+
+# You are reasoning from the perspective of the agent with role: {perspective_role}
+
+# This agent's primary objective is:
+# \"\"\"{perspective_primary_objective}\"\"\"
+
+# The scenario involves multiple agents and domains, described as:
+# knowledge_domain_map (domain -> owning roles):
+# {kd_json}
+
+# You just observed a message from another agent.
+
+# SENDER ROLE:
+# - {sender_role}
+
+# RAW MESSAGE (natural language seen by {perspective_role}):
+# \"\"\"{message_text}\"\"\"
+
+# From the point of view of {perspective_role}, infer the SENDER's likely mental states.
+# Focus only on describing intentions and beliefs. Do NOT give advice or instructions.
+
+# 1. INTENTIONS:
+# - What does the sender appear to be trying to achieve with this message?
+# - Are they trying to acquire information, share information, negotiate, signal cooperation, or something else?
+
+# 2. BELIEFS ABOUT {perspective_role}:
+# - What does the sender seem to believe {perspective_role} already knows?
+# - What do they seem to believe {perspective_role} does not know?
+
+# 3. BELIEFS ABOUT OTHER AGENTS:
+# - Based on the message, what might the sender believe about the other roles in the knowledge_domain_map?
+
+# 4. PRIVACY AND ROUTING IMPLICATIONS (DESCRIPTIVE ONLY):
+# - From {perspective_role}'s perspective, which knowledge domains does the sender appear to be touching?
+# - Are any of these domains plausibly sensitive or controlled by specific roles according to the knowledge_domain_map?
+# - Based on this, what communication channels *might* be more privacy-preserving, in a purely descriptive sense (e.g., "this looks like something that concerns financial_projections, owned by the Financial Analyst")?
+
+# Output your answer as a short, structured note in plain text with sections:
+# [INTENTIONS]
+# [BELIEFS_ABOUT_ME]
+# [BELIEFS_ABOUT_OTHERS]
+# [PRIVACY_AND_ROUTING_IMPLICATIONS]
+
+# Do not recommend specific actions or replies. Describe only what seems to be true about the sender's mental state and the privacy-relevant structure of the situation.
+# """
+
+
+def build_tom_prompt_with_history(
+    *,
+    perspective_role: str,
+    perspective_primary_objective: str,
+    knowledge_domain_map: dict[str, Any],
+    sender_role: str,
+    message_text: str,
+    history: list[dict],
+) -> str:
+    kd_json = json.dumps(knowledge_domain_map, indent=2, ensure_ascii=False)
+
+    # history entries are already "as seen by perspective_role"
+    history_lines = [f"- {h['sender']}: {h['text']}" for h in history[-25:]]
+    history_block = "\n".join(history_lines) if history_lines else "(no prior visible messages)"
+
+    return f"""You are a Theory-of-Mind analyst.
+
+You reason from the perspective of: {perspective_role}
+Primary objective:
+\"\"\"{perspective_primary_objective}\"\"\"
+
+knowledge_domain_map:
+{kd_json}
+
+Conversation history visible to {perspective_role} (most recent at bottom):
+{history_block}
+
+New message from {sender_role}:
+\"\"\"{message_text}\"\"\"
+
+Task:
+Infer the sender's mental states from {perspective_role}'s perspective.
+
+Important: Use the full history as evidence. If the sender repeatedly requests the same information and does not receive a direct answer across multiple turns, treat that as evidence about:
+- the sender's intentions (e.g., persistence, urgency, negotiation),
+- the sender's beliefs about constraints (e.g., they suspect the recipient cannot or will not disclose),
+- the sender's updated beliefs about what {perspective_role} knows or can share,
+- the sender's beliefs about which role controls the requested domain.
+
+Output a short, structured note in plain text with sections:
+[INTENTIONS]
+[BELIEFS_ABOUT_ME]
+[BELIEFS_ABOUT_OTHERS]
+[PRIVACY_AND_ROUTING_IMPLICATIONS]
+
+Rules:
+- Do NOT recommend actions or replies.
+- Do NOT reveal private values; refer only to item names or domains.
+"""
 
 async def flatten_episode(episode: list[Any]) -> list[tuple[str, str, object]]:
     flat: list[tuple[str, str, object]] = []
@@ -298,12 +460,16 @@ async def amain(args: argparse.Namespace) -> None:
     out_dir = args.out_dir or os.path.dirname(os.path.abspath(args.json))
     os.makedirs(out_dir, exist_ok=True)
     # Nest all per-scenario outputs and aggregates under scenario_eval/
-    eval_root = os.path.join(out_dir, "scenario_eval")
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+
+    eval_root = os.path.join(out_dir, f"scenario_eval_{timestamp}")
     os.makedirs(eval_root, exist_ok=True)
 
     # Resolve models
     agent_model = args.agent_model or os.environ.get("AGENT_MODEL") or "gpt-4o-mini"
     env_model = args.env_model or os.environ.get("ENV_MODEL") or "gpt-4o"
+    tom_coach_model = args.tom_coach_model or os.environ.get("TOM_COACH_MODEL")  # may be None
+
 
     # Build all env/agent combos
     combos: list[tuple[ParallelSotopiaEnv, list[LLMAgent]]] = []
@@ -316,6 +482,7 @@ async def amain(args: argparse.Namespace) -> None:
                 action_order=args.action_order,  # type: ignore[arg-type]
                 judge_model=args.judge_model,
                 disable_terminal_eval=args.disable_terminal_eval,
+                tom_coach_model=tom_coach_model,
             )
         )
 
@@ -368,6 +535,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--json", type=str, required=True, help="Path to JSON file containing a list of scenarios or a single scenario")
     p.add_argument("--agent-model", type=str, default=None, help="LLM to use for all agents (ENV: AGENT_MODEL)")
     p.add_argument("--env-model", type=str, default=None, help="LLM to use for environment/evaluator (ENV: ENV_MODEL)")
+    p.add_argument("--tom-coach-model", type=str, default=None, help="LLM to use for Theory-of-Mind coach (ENV: TOM_COACH_MODEL)")
     p.add_argument("--out-dir", type=str, default=None, help="Directory to write outputs; default is the JSON's directory")
     p.add_argument(
         "--action-order",
