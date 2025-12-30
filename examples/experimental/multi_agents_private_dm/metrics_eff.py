@@ -17,6 +17,7 @@ Pipeline (no heuristics):
     Eff = 1 - ((median_time - 1) / T_max)  (with safe edge handling)
 - Persist JSON and a human-readable summary.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,7 +50,11 @@ class EffOutput(BaseModel):
 
 
 def _compute_tmax(utterances: list[dict[str, Any]]) -> int:
-    turns = [u.get("turn", -1) for u in utterances if isinstance(u.get("turn", None), int)]
+    turns: list[int] = [
+        int(u.get("turn", -1))
+        for u in utterances
+        if isinstance(u.get("turn", None), int)
+    ]
     if not turns:
         return 1
     # turns are zero-based in our logs; T_max is count in 1-based terms
@@ -63,6 +68,7 @@ def _compute_tmax(utterances: list[dict[str, Any]]) -> int:
 #     if t_max <= 1:
 #         return 1.0 if med <= 1 else 0.0
 #     return 1.0 - ((med - 1.0) / (t_max - 1.0))
+
 
 def _eff_from_times(times: list[int], t_max: int) -> float:
     if not times:
@@ -119,7 +125,9 @@ async def compute_and_save_eff(
     agents_ctx = []
     for ag in spec.get("agents", []):
         role = ag.get("role")
-        desired = list(ag.get("post_interaction_knowledge", {}).get("desired_knowledge", []))
+        desired = list(
+            ag.get("post_interaction_knowledge", {}).get("desired_knowledge", [])
+        )
         agents_ctx.append({"role": role, "desired_knowledge": desired})
 
     t_max = _compute_tmax(utterances)
@@ -191,13 +199,18 @@ Return JSON with this Pydantic schema:
     }
     lines: list[str] = []
     # lines.append("Efficiency (Eff): 1 - ((median(T_i) - 1) / (T_max - 1))\n")
-    lines.append("Efficiency (Eff): 1 - ((median(t_i) - 1) / T_max), where t_i in [1..T_max+1]\n")
-
+    lines.append(
+        "Efficiency (Eff): 1 - ((median(t_i) - 1) / T_max), where t_i in [1..T_max+1]\n"
+    )
 
     for agent_r in output.agents:
         # Construct times with T_max+1 penalty when not received
-        desired_raw = next((a for a in agents_ctx if a["role"] == agent_r.agent), {"desired_knowledge": []})
+        desired_raw: dict[str, Any] = next(
+            (a for a in agents_ctx if a["role"] == agent_r.agent),
+            {"role": None, "desired_knowledge": []},
+        )
         desired_items_list = list(desired_raw.get("desired_knowledge", []))
+
         # Build lookup from LLM results
         llm_map: dict[str, EffLLMOutItem] = {d.name: d for d in agent_r.desired_items}
         times: list[int] = []
@@ -236,7 +249,9 @@ Return JSON with this Pydantic schema:
             "desired_items": details,
             "judge_rationale": agent_r.judge_rationale,
         }
-        lines.append(f"- {agent_r.agent}: Eff={eff_score:.3f} (median from {times}, T_max={t_max})")
+        lines.append(
+            f"- {agent_r.agent}: Eff={eff_score:.3f} (median from {times}, T_max={t_max})"
+        )
 
     metrics_dir = os.path.join(scenario_dir, "metrics")
     os.makedirs(metrics_dir, exist_ok=True)
@@ -244,4 +259,3 @@ Return JSON with this Pydantic schema:
         json.dump(report, jf, ensure_ascii=False, indent=2)
     with open(os.path.join(metrics_dir, "eff_llm.txt"), "w") as tf:
         tf.write("\n".join(lines) + "\n")
-

@@ -13,10 +13,11 @@ Pure LLM-as-judge pipeline that:
 This module avoids heuristics: all item detection and routing expectations are
 derived by the LLM from the provided scenario context and the transcript.
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any, Literal
+from typing import Any
 import os
 
 from pydantic import BaseModel, Field
@@ -187,13 +188,15 @@ Return JSON with this Pydantic schema:
     )
 
     # Compute per-item and per-agent scores; then persist
-    report = {
+    report: dict[str, Any] = {
         "scenario_id": spec.get("scenario_id"),
         "judge_model": judge_model,
         "agents": {},
     }
     text_lines: list[str] = []
-    text_lines.append("Disclosure Alignment (DA): mean Jaccard(expected, actual) per agent\n")
+    text_lines.append(
+        "Disclosure Alignment (DA): mean Jaccard(expected, actual) per agent\n"
+    )
 
     def _canon(tokens: list[str]) -> set[str]:
         out: set[str] = set()
@@ -227,8 +230,14 @@ Return JSON with this Pydantic schema:
                 }
             )
         mean_da = (sum(scores) / len(scores)) if scores else None
-        report["agents"][agent_r.agent] = {"mean_da": mean_da, "items": details, "judge_rationale": agent_r.judge_rationale}
-        text_lines.append(f"- {agent_r.agent}: {mean_da if mean_da is not None else 'NA'}")
+        report["agents"][agent_r.agent] = {
+            "mean_da": mean_da,
+            "items": details,
+            "judge_rationale": agent_r.judge_rationale,
+        }
+        text_lines.append(
+            f"- {agent_r.agent}: {mean_da if mean_da is not None else 'NA'}"
+        )
 
     # Write files
     metrics_dir = os.path.join(scenario_dir, "metrics")
