@@ -22,13 +22,14 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Pydantic response models ─────────────────────────────────────────
 
 class CPVViolation(BaseModel):
     """A single critical privacy violation detected in the transcript."""
+    model_config = ConfigDict(extra="forbid")
     violating_agent: str = Field(
         description="Role name of the agent who caused the violation"
     )
@@ -59,6 +60,7 @@ class CPVViolation(BaseModel):
 
 class CPVJudgeResponse(BaseModel):
     """Complete CPV judge response."""
+    model_config = ConfigDict(extra="forbid")
     violations: list[CPVViolation] = Field(
         description="List of all critical privacy violations found (empty if none)"
     )

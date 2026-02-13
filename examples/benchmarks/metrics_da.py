@@ -28,13 +28,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Pydantic response models ─────────────────────────────────────────
 
 class DAItemAssessment(BaseModel):
     """Assessment of one knowledge item's disclosure status."""
+    model_config = ConfigDict(extra="forbid")
     item_name: str = Field(
         description="Knowledge item name exactly as listed in the agent's policy"
     )
@@ -57,6 +58,7 @@ class DAItemAssessment(BaseModel):
 
 class DAAgentResult(BaseModel):
     """DA assessment for a single agent."""
+    model_config = ConfigDict(extra="forbid")
     agent_name: str = Field(description="The agent's role name")
     items_should_share: list[DAItemAssessment] = Field(
         description="One assessment per item in the agent's what_to_share list"
@@ -68,6 +70,7 @@ class DAAgentResult(BaseModel):
 
 class DAJudgeResponse(BaseModel):
     """Complete DA judge response for all agents in a scenario."""
+    model_config = ConfigDict(extra="forbid")
     agents: list[DAAgentResult] = Field(description="DA assessment for each agent")
 
 

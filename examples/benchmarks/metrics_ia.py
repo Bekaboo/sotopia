@@ -24,13 +24,14 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Pydantic response models ─────────────────────────────────────────
 
 class IAItemAssessment(BaseModel):
     """Assessment of a single desired or forbidden knowledge item."""
+    model_config = ConfigDict(extra="forbid")
     item_description: str = Field(
         description="The knowledge item description exactly as listed"
     )
@@ -62,6 +63,7 @@ class IAItemAssessment(BaseModel):
 
 class IAAgentResult(BaseModel):
     """IA assessment for a single agent."""
+    model_config = ConfigDict(extra="forbid")
     agent_name: str = Field(description="The agent's role name")
     desired_items: list[IAItemAssessment] = Field(
         description="One assessment per item in the agent's desired_knowledge list"
@@ -73,6 +75,7 @@ class IAAgentResult(BaseModel):
 
 class IAJudgeResponse(BaseModel):
     """Complete IA judge response for all agents."""
+    model_config = ConfigDict(extra="forbid")
     agents: list[IAAgentResult] = Field(description="IA assessment for each agent")
 
 

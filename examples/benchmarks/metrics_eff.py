@@ -20,13 +20,14 @@ import re
 import statistics
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Pydantic response models ─────────────────────────────────────────
 
 class EFFAcquisition(BaseModel):
     """Assessment of when (if ever) an agent first received a piece of knowledge."""
+    model_config = ConfigDict(extra="forbid")
     item_description: str = Field(
         description="The desired_knowledge item description exactly as listed"
     )
@@ -49,6 +50,7 @@ class EFFAcquisition(BaseModel):
 
 class EFFAgentResult(BaseModel):
     """EFF assessment for a single agent."""
+    model_config = ConfigDict(extra="forbid")
     agent_name: str = Field(description="The agent's role name")
     acquisitions: list[EFFAcquisition] = Field(
         description="One assessment per desired_knowledge item"
@@ -57,6 +59,7 @@ class EFFAgentResult(BaseModel):
 
 class EFFJudgeResponse(BaseModel):
     """Complete EFF judge response for all agents."""
+    model_config = ConfigDict(extra="forbid")
     agents: list[EFFAgentResult] = Field(description="EFF assessment for each agent")
     total_rounds: int = Field(
         description="The total number of rounds in the conversation (from the transcript header)"
