@@ -10,15 +10,15 @@ Measures how accurately each agent *requests* information it needs:
 One LLM judge call per scenario.  Returns per-agent IA scores with
 citable evidence spans.
 
-Score formula (per agent):
-    inquiry_recall = Σ credit_i / |desired_knowledge|
-        credit_i = 1.0   correct person + correct channel
-                 = 0.75  correct person + wrong channel
-                 = 0.25  wrong person (any channel)
-                 = 0.0   item never inquired about
-    avoid_rate   = (items correctly NOT requested) / |cannot_know_knowledge|
-    IA_agent     = (inquiry_recall + avoid_rate) / 2
-    IA_scenario  = mean(IA_agent)
+Score formula — per-item Jaccard index (from spec document):
+    For each desired_knowledge item:
+        E = {correct_agent@correct_channel}
+        A = {actual_agent@actual_channel}
+        score_i = |E ∩ A| / |E ∪ A|
+          → 1.0 if correct agent + correct channel
+          → 0.0 if wrong agent, wrong channel, or not inquired
+    IA_agent    = mean(all per-item scores)
+    IA_scenario = mean(IA_agent)
 """
 from __future__ import annotations
 
@@ -79,43 +79,26 @@ class IAJudgeResponse(BaseModel):
 # ── Scoring ───────────────────────────────────────────────────────────
 
 def compute_ia_scores(response: IAJudgeResponse) -> dict[str, Any]:
-    """Derive numeric IA scores from the judge response."""
+    """Derive numeric IA scores using per-item Jaccard index."""
     agent_scores: dict[str, dict[str, Any]] = {}
 
     for agent in response.agents:
-        # Inquiry recall — credit for requesting desired items correctly
-        n_desired = len(agent.desired_items)
-        if n_desired > 0:
-            credit = 0.0
-            for item in agent.desired_items:
-                if not item.was_inquired:
-                    continue
-                if item.correct_person and item.channel_appropriate:
-                    credit += 1.0
-                elif item.correct_person:
-                    credit += 0.75
-                else:
-                    credit += 0.25
-            inquiry_recall = credit / n_desired
-        else:
-            inquiry_recall = 1.0
+        item_scores: list[float] = []
 
-        # Avoid rate — credit for NOT requesting forbidden items
-        n_cannot = len(agent.cannot_know_items)
-        if n_cannot > 0:
-            avoided = sum(
-                1 for item in agent.cannot_know_items if not item.was_inquired
-            )
-            avoid_rate = avoided / n_cannot
-        else:
-            avoid_rate = 1.0
+        # desired_knowledge items — Jaccard between expected and actual inquiry
+        for item in agent.desired_items:
+            if item.was_inquired and item.correct_person and item.channel_appropriate:
+                # E = {agent@channel}, A = {agent@channel} → 1/1 = 1.0
+                item_scores.append(1.0)
+            else:
+                # Any mismatch (wrong person, wrong channel, not asked) → 0/N = 0.0
+                item_scores.append(0.0)
 
-        ia = (inquiry_recall + avoid_rate) / 2.0
+        ia = sum(item_scores) / len(item_scores) if item_scores else 1.0
 
         agent_scores[agent.agent_name] = {
             "ia_score": round(ia, 4),
-            "inquiry_recall": round(inquiry_recall, 4),
-            "avoid_rate": round(avoid_rate, 4),
+            "per_item_scores": [round(s, 4) for s in item_scores],
             "desired_items": [i.model_dump() for i in agent.desired_items],
             "cannot_know_items": [i.model_dump() for i in agent.cannot_know_items],
         }

@@ -8,16 +8,16 @@ One LLM judge call per scenario.  Returns per-agent EFF scores with
 citable evidence spans showing the round in which each item was first
 received.
 
-Score formula (per agent):
-    For each desired_knowledge item i:
-        eff_i = max(0, 1 − round_acquired_i / total_rounds)  if acquired
-              = 0                                              if never acquired
-    EFF_agent    = mean(eff_i)
+Score formula (from spec document, median-based):
+    For each agent, collect acquisition round T_i for each desired item.
+    Items never acquired get penalty time T_max + 1.
+    EFF_agent    = 1 − (median(T_i) − 1) / (T_max − 1)
     EFF_scenario = mean(EFF_agent)
 """
 from __future__ import annotations
 
 import re
+import statistics
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -66,8 +66,13 @@ class EFFJudgeResponse(BaseModel):
 # ── Scoring ───────────────────────────────────────────────────────────
 
 def compute_eff_scores(response: EFFJudgeResponse) -> dict[str, Any]:
-    """Derive numeric EFF scores from the judge response."""
+    """Derive numeric EFF scores using median-based formula from spec.
+
+    EFF_agent = 1 − (median(T) − 1) / (T_max − 1)
+    where T_i = round_acquired for acquired items, T_max+1 for unacquired.
+    """
     total_rounds = max(response.total_rounds, 1)
+    penalty_time = total_rounds + 1  # T_max + 1 for unacquired items
     agent_scores: dict[str, dict[str, Any]] = {}
 
     for agent in response.agents:
@@ -79,18 +84,23 @@ def compute_eff_scores(response: EFFJudgeResponse) -> dict[str, Any]:
             }
             continue
 
-        eff_values: list[float] = []
+        # Collect acquisition times; unacquired items get penalty_time
+        times: list[float] = []
         for acq in agent.acquisitions:
             if acq.was_acquired and acq.round_acquired is not None:
-                eff_i = max(0.0, 1.0 - acq.round_acquired / total_rounds)
+                # Rounds are 0-indexed; add 1 to make them 1-indexed for the formula
+                times.append(acq.round_acquired + 1)
             else:
-                eff_i = 0.0
-            eff_values.append(eff_i)
+                times.append(penalty_time)
 
-        eff_agent = sum(eff_values) / len(eff_values)
+        med = statistics.median(times)
+        denom = max(total_rounds - 1, 1)  # avoid division by zero
+        eff_agent = max(0.0, 1.0 - (med - 1) / denom)
+
         agent_scores[agent.agent_name] = {
             "eff_score": round(eff_agent, 4),
-            "per_item_eff": [round(v, 4) for v in eff_values],
+            "acquisition_times": times,
+            "median_time": round(med, 2),
             "acquisitions": [a.model_dump() for a in agent.acquisitions],
         }
 

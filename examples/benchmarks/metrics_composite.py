@@ -51,9 +51,9 @@ def compute_and_save_composite(scenario_dir: str) -> dict[str, Any]:
         a_ia = ia_agents.get(name, {}).get("ia_score", 0.0)
         a_eff = eff_agents.get(name, {}).get("eff_score", 0.0)
         a_cpv_count = len(cpv_agent_violations.get(name, []))
-        # For per-agent CPV, use violation count ratio (simplified)
-        total_possible = cpv_data.get("total_possible_violations", 1)
-        a_cpv = a_cpv_count / total_possible if total_possible > 0 else 0.0
+        # For per-agent CPV, use violation count ratio
+        private_items = cpv_data.get("private_items_handled", 1)
+        a_cpv = a_cpv_count / private_items if private_items > 0 else 0.0
         a_product = a_da * a_ia * max(0.0, 1.0 - a_cpv) * a_eff
         a_cm = math.pow(a_product, 0.25) if a_product > 0 else 0.0
         agent_composites[name] = {
