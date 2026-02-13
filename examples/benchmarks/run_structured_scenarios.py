@@ -16,7 +16,13 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from typing import Any, TypedDict, Optional, Literal, cast
+
+# Ensure the benchmarks directory is on sys.path so metric modules are importable
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+if _SCRIPT_DIR not in sys.path:
+    sys.path.insert(0, _SCRIPT_DIR)
 
 from sotopia.database.persistent_profile import AgentProfile, EnvironmentProfile
 from sotopia.envs.parallel import ParallelSotopiaEnv
@@ -182,8 +188,13 @@ def write_scenario_outputs(
     flat: list[tuple[str, str, object]],
     out_dir: str,
 ) -> None:
-    scenario_dir = os.path.join(out_dir, f"scenario_{spec['scenario_id']}")
+    scenario_dir = os.path.join(out_dir, str(spec['scenario_id']))
     _ensure_dir(scenario_dir)
+
+    # Save the scenario spec so downstream tools (aggregator) can read it
+    with open(os.path.join(scenario_dir, "spec.json"), "w") as sf:
+        json.dump(dict(spec), sf, indent=2)  # type: ignore[arg-type]
+
     txt_path = os.path.join(scenario_dir, "transcript.txt")
     jsonl_path = os.path.join(scenario_dir, "transcript.jsonl")
 
@@ -211,72 +222,113 @@ def write_scenario_outputs(
                 entry.update({"type": "unknown", "repr": str(msg)})
             f_jsonl.write(json.dumps(entry) + "\n")
 
-    # Pretty per-turn transcript (robust to missing explicit "Turn #" system lines)
-    pretty_path = os.path.join(scenario_dir, "transcript_pretty.txt")
-    turns: list[list[str]] = []
-    current: list[str] = []
-    current_turn_idx = -1
+    # ── Build structured round data ────────────────────────────────────
+    # In round-robin with N agents, one "round" = N consecutive sim-turns.
+
+    # Step 1: discover agent names in speaking order
+    agent_names_ordered: list[str] = []
+    for sender, receiver, msg in flat:
+        if (
+            receiver == "Environment"
+            and sender != "Environment"
+            and isinstance(msg, AgentAction)
+            and sender not in agent_names_ordered
+        ):
+            agent_names_ordered.append(sender)
+    num_agents = max(len(agent_names_ordered), 1)
+
+    # Build short aliases for compact display  (e.g. "SRE Lead" for long role names)
+    agent_aliases: dict[str, str] = {}
+    for name in agent_names_ordered:
+        # Use the name as-is; callers can shorten in JSON if desired
+        agent_aliases[name] = name
+
+    # Step 2: collect per-sim-turn structured utterances
+    class Utterance:
+        __slots__ = ("sender", "action_type", "to", "argument")
+
+        def __init__(self, sender: str, action_type: str, to: list[str] | None, argument: str):
+            self.sender = sender
+            self.action_type = action_type
+            self.to = to or []
+            self.argument = argument
+
+        @property
+        def visibility(self) -> str:
+            return f"private to={','.join(self.to)}" if self.to else "public"
+
+    sim_turn_utterances: list[list[Utterance]] = []
+    current_utts: list[Utterance] = []
     last_seen_turn = -1
     for sender, receiver, msg in flat:
-        # Start a new block when we observe Environment->agent Observation with a higher turn_number
         if sender == "Environment" and isinstance(msg, Observation):
             tn = getattr(msg, "turn_number", -1)
             if isinstance(tn, int) and tn > last_seen_turn:
-                if current:
-                    turns.append(current)
-                    current = []
+                if current_utts:
+                    sim_turn_utterances.append(current_utts)
+                    current_utts = []
                 last_seen_turn = tn
-                current_turn_idx = tn
             continue
-
-        # Collect only agent actions for readable turns
         if receiver == "Environment" and sender != "Environment" and isinstance(msg, AgentAction):
             if msg.action_type == "none":
                 continue
-            prefix = f"{sender} [{msg.action_type}]"
-            if msg.to:
-                prefix = f"{sender} [{msg.action_type} private to={msg.to}]"
-            current.append(f"{prefix}: {msg.argument}")
+            current_utts.append(Utterance(sender, msg.action_type, msg.to, msg.argument))
+    if current_utts:
+        sim_turn_utterances.append(current_utts)
 
-    if current:
-        turns.append(current)
+    # Step 3: merge every `num_agents` sim-turns into one round
+    rounds: list[list[Utterance]] = []
+    for i in range(0, len(sim_turn_utterances), num_agents):
+        round_utts: list[Utterance] = []
+        for block in sim_turn_utterances[i : i + num_agents]:
+            round_utts.extend(block)
+        if round_utts:
+            rounds.append(round_utts)
 
+    # ── transcript_pretty.txt  (judge-friendly, citable IDs) ─────────
+    pretty_path = os.path.join(scenario_dir, "transcript_pretty.txt")
     with open(pretty_path, "w") as f:
-        if not turns:
-            f.write("No turns detected. Raw lines were written to transcript.txt.\n")
-        else:
-            # Render using natural indices starting from 0 (turn 0 is initial)
-            for i, block in enumerate(turns):
-                f.write(f"=== Turn {i} ===\n")
-                for line in block:
-                    f.write(line + "\n")
+        # Header block
+        agent_list_str = ", ".join(
+            f"{idx + 1}={name}" for idx, name in enumerate(agent_names_ordered)
+        )
+        f.write(f"[SCENARIO] id={spec['scenario_id']} | sector={spec.get('sector', '?')} | agents={num_agents} | rounds={len(rounds)}\n")
+        f.write(f"[AGENTS] {agent_list_str}\n")
+        f.write(f"[GOAL] {spec['scenario_goal']}\n")
+        f.write("\n")
 
-    # Per-agent filtered views
+        if not rounds:
+            f.write("No rounds detected. Raw lines were written to transcript.txt.\n")
+        else:
+            for r_idx, round_utts in enumerate(rounds):
+                for u_idx, utt in enumerate(round_utts):
+                    tag = f"[R{r_idx}.{u_idx + 1}]"
+                    f.write(f"{tag} {utt.sender} ({utt.action_type}, {utt.visibility}): {utt.argument}\n")
+                f.write("\n")
+
+    # ── Per-agent filtered views (same citable IDs) ──────────────────
     views_dir = os.path.join(scenario_dir, "views")
     _ensure_dir(views_dir)
-    agent_names: list[str] = []
-    for sender, _, _ in flat:
-        if sender != "Environment" and sender not in agent_names:
-            agent_names.append(sender)
-    for viewer in agent_names:
+    for viewer in agent_names_ordered:
         view_path = os.path.join(views_dir, f"{viewer.replace(' ', '_').lower()}_view.txt")
         with open(view_path, "w") as vf:
-            vf.write(f"Perceived transcript for {viewer}\n\n")
-            turn_idx = -1
-            for sender, receiver, msg in flat:
-                if sender == "Environment" and isinstance(msg, SimpleMessage) and msg.message.startswith("Turn #"):
-                    turn_idx += 1
-                    vf.write(f"\n=== Turn {turn_idx} ===\n")
-                    continue
-                if receiver == "Environment" and sender != "Environment" and isinstance(msg, AgentAction):
-                    to_list = msg.to or []
-                    if (not to_list) or (viewer in to_list) or (sender == viewer):
-                        if msg.action_type == "none":
-                            continue
-                        if to_list:
-                            vf.write(f"{sender} [{msg.action_type} private to={to_list}]: {msg.argument}\n")
-                        else:
-                            vf.write(f"{sender} [{msg.action_type}]: {msg.argument}\n")
+            vf.write(f"[VIEW] agent={viewer} | scenario_id={spec['scenario_id']} | rounds={len(rounds)}\n\n")
+            for r_idx, round_utts in enumerate(rounds):
+                header_written = False
+                for u_idx, utt in enumerate(round_utts):
+                    visible = (
+                        not utt.to  # public
+                        or utt.sender == viewer  # viewer sent it
+                        or viewer in utt.to  # viewer is a recipient
+                    )
+                    if visible:
+                        if not header_written:
+                            vf.write(f"--- Round {r_idx} ---\n")
+                            header_written = True
+                        tag = f"[R{r_idx}.{u_idx + 1}]"
+                        vf.write(f"{tag} {utt.sender} ({utt.action_type}, {utt.visibility}): {utt.argument}\n")
+                if header_written:
+                    vf.write("\n")
 
 
 async def amain(args: argparse.Namespace) -> None:
@@ -343,7 +395,7 @@ async def amain(args: argparse.Namespace) -> None:
         )
 
         if args.metrics:
-            scenario_dir = os.path.join(eval_root, f"scenario_{spec['scenario_id']}")
+            scenario_dir = os.path.join(eval_root, str(spec['scenario_id']))
             errors: list[str] = []
             try:
                 from metrics_da import compute_and_save_da  # type: ignore
