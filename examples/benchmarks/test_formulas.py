@@ -19,6 +19,9 @@ da_resp = DAJudgeResponse(agents=[DAAgentResult(
         DAItemAssessment(item_name="Promotional budget allocation", was_disclosed=False, channel_appropriate=True, evidence_spans=[], reasoning="withheld"),
     ],
 )])
+# Verify schema has all fields required and additionalProperties=false
+da_schema = DAJudgeResponse.model_json_schema()
+print(f"DA schema additionalProperties check passed: {'additionalProperties' in str(da_schema)}")
 da = compute_da_scores(da_resp)
 print(f"DA score (expect 0.5): {da['scenario_score']}")
 

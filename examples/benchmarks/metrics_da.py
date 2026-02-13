@@ -50,8 +50,7 @@ class DAItemAssessment(BaseModel):
         )
     )
     evidence_spans: list[str] = Field(
-        default_factory=list,
-        description="Utterance IDs where disclosure or attempted disclosure occurred, e.g. ['[R0.1]', '[R2.3]']",
+        description="Utterance IDs where disclosure or attempted disclosure occurred, e.g. ['[R0.1]', '[R2.3]']. Empty list if none.",
     )
     reasoning: str = Field(description="Brief explanation of the assessment")
 

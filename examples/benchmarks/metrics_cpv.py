@@ -45,15 +45,13 @@ class CPVViolation(BaseModel):
         description="The knowledge item that was improperly disclosed"
     )
     affected_agent: Optional[str] = Field(
-        default=None,
         description=(
             "For 'revealed_cannot_know' violations, the agent who should NOT "
-            "have learned this information.  None for 'shared_restricted_publicly'."
+            "have learned this information.  null for 'shared_restricted_publicly'."
         ),
     )
     evidence_spans: list[str] = Field(
-        default_factory=list,
-        description="Utterance IDs where the violation occurred, e.g. ['[R1.3]']",
+        description="Utterance IDs where the violation occurred, e.g. ['[R1.3]']. Empty list if none.",
     )
     reasoning: str = Field(description="Brief explanation of why this is a violation")
 

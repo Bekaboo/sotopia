@@ -39,24 +39,20 @@ class IAItemAssessment(BaseModel):
         description="Whether the agent actively requested / asked about this item"
     )
     asked_agent: Optional[str] = Field(
-        default=None,
-        description="Role name of the agent to whom the inquiry was directed (None if not inquired)",
+        description="Role name of the agent to whom the inquiry was directed (null if not inquired)",
     )
     correct_person: bool = Field(
-        default=False,
-        description="True if the inquiry was directed to an agent who actually possesses this knowledge",
+        description="True if the inquiry was directed to an agent who actually possesses this knowledge. False if not inquired or wrong person.",
     )
     channel_appropriate: bool = Field(
-        default=True,
         description=(
             "True if the inquiry channel was appropriate "
             "(private for private-sensitivity items, public for public). "
-            "True by default when item was not inquired."
+            "True when item was not inquired."
         ),
     )
     evidence_spans: list[str] = Field(
-        default_factory=list,
-        description="Utterance IDs where the inquiry occurred, e.g. ['[R1.2]']",
+        description="Utterance IDs where the inquiry occurred, e.g. ['[R1.2]']. Empty list if none.",
     )
     reasoning: str = Field(description="Brief explanation of the assessment")
 

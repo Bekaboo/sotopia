@@ -35,15 +35,13 @@ class EFFAcquisition(BaseModel):
         description="Whether the agent received the substantive content of this item during the conversation"
     )
     round_acquired: Optional[int] = Field(
-        default=None,
         description=(
             "The round number (0-indexed, from the [R#.#] tags) in which "
-            "the item was first received.  None if never acquired."
+            "the item was first received.  null if never acquired."
         ),
     )
     evidence_spans: list[str] = Field(
-        default_factory=list,
-        description="Utterance IDs where the information was communicated to the agent, e.g. ['[R2.1]']",
+        description="Utterance IDs where the information was communicated to the agent, e.g. ['[R2.1]']. Empty list if none.",
     )
     reasoning: str = Field(description="Brief explanation of how/when the item was received")
 
