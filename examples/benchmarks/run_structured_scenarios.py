@@ -352,6 +352,10 @@ async def amain(args: argparse.Namespace) -> None:
         if not scenarios:
             raise SystemExit(f"No scenario with scenario_id={sid} found in {args.json}.")
 
+    if args.max_scenarios is not None:
+        scenarios = scenarios[: args.max_scenarios]
+        print(f"Limiting to first {args.max_scenarios} scenarios ({len(scenarios)} loaded).")
+
     out_dir = args.out_dir or os.path.dirname(os.path.abspath(args.json))
     _ensure_dir(out_dir)
     eval_root = os.path.join(out_dir, "scenario_eval")
@@ -463,6 +467,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--judge-model", type=str, default=None, help="LLM to use as the judge for terminal evaluation (defaults to --env-model if not set)")
     p.add_argument("--disable-terminal-eval", action="store_true", help="Disable SotopiaDimensions terminal evaluation at the end of each simulation")
     p.add_argument("--scenario-id", type=int, default=None, help="If provided, run only the scenario with this id")
+    p.add_argument("--max-scenarios", type=int, default=None, help="If provided, run only the first N scenarios from the dataset")
     p.add_argument(
         "--prompt-mode",
         type=str,

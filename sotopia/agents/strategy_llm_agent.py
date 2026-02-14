@@ -21,9 +21,9 @@ def _guidance_for_mode(
     if mode == "basic":
         # Minimal framing — channel rules and policy reminder only.
         return (
-            f"{who} must respect sharing policies and avoid leaking any item listed in 'MUST NOT share'. "
+            f"{who} must respect sharing policies and avoid leaking sensitive items."
             "Default to PUBLIC messages (set 'to' = []). "
-            "Use PRIVATE ('to' = subset of valid names) only when content is sensitive or intended for a specific subset. "
+            "Use PRIVATE ('to' = subset of valid names) when content is sensitive or intended for a specific subset participants."
             f"If addressing everyone, leave 'to' empty.{names_note} "
             "Respond with the best next action to progress your objective. "
             "Only output the final JSON action that follows the provided schema."
