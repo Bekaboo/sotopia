@@ -377,16 +377,36 @@ async def amain(args: argparse.Namespace) -> None:
             )
         )
 
-    # Run simulations in batch
+    # Run simulations in batches
     from sotopia.server import run_async_server
 
-    batch_results = await run_async_server(
-        env_agent_combo_list=combos,
-        action_order=args.action_order,  # type: ignore[arg-type]
-    )
+    batch_size = args.batch_size
+    all_results: list[tuple] = []  # (spec, episode) pairs
+
+    for batch_start in range(0, len(scenarios), batch_size):
+        batch_specs = scenarios[batch_start : batch_start + batch_size]
+        batch_combos = combos[batch_start : batch_start + batch_size]
+        batch_num = batch_start // batch_size + 1
+        total_batches = (len(scenarios) + batch_size - 1) // batch_size
+        print(f"\n{'='*60}")
+        print(f"Running batch {batch_num}/{total_batches} (scenarios {batch_start+1}-{batch_start+len(batch_specs)} of {len(scenarios)})")
+        print(f"{'='*60}")
+
+        batch_results = await run_async_server(
+            env_agent_combo_list=batch_combos,
+            action_order=args.action_order,  # type: ignore[arg-type]
+        )
+
+        for spec, episode in zip(batch_specs, batch_results):
+            all_results.append((spec, episode))
+
+        # Small delay between batches to help with rate limits
+        if batch_start + batch_size < len(scenarios):
+            print(f"Batch {batch_num} complete. Pausing 5s before next batch...")
+            await asyncio.sleep(5)
 
     # Save outputs and optional metrics
-    for spec, episode in zip(scenarios, batch_results):
+    for spec, episode in all_results:
         flat = flatten_episode(episode)
         write_scenario_outputs(
             spec=spec,
@@ -451,6 +471,7 @@ def parse_args() -> argparse.Namespace:
         help="Prompting strategy for agents: basic / CoT / ToM",
     )
     p.add_argument("--metrics", action="store_true", help="Attempt to run external metric modules if available")
+    p.add_argument("--batch-size", type=int, default=5, help="Number of scenarios to run per batch (default 5). Lower to avoid rate limits.")
     return p.parse_args()
 
 
