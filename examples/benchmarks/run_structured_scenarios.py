@@ -310,7 +310,8 @@ def write_scenario_outputs(
     views_dir = os.path.join(scenario_dir, "views")
     _ensure_dir(views_dir)
     for viewer in agent_names_ordered:
-        view_path = os.path.join(views_dir, f"{viewer.replace(' ', '_').lower()}_view.txt")
+        safe_name = viewer.replace(' ', '_').replace('/', '_').lower()
+        view_path = os.path.join(views_dir, f"{safe_name}_view.txt")
         with open(view_path, "w") as vf:
             vf.write(f"[VIEW] agent={viewer} | scenario_id={spec['scenario_id']} | rounds={len(rounds)}\n\n")
             for r_idx, round_utts in enumerate(rounds):
