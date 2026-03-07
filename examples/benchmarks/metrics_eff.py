@@ -170,6 +170,7 @@ async def compute_and_save_eff(
     flat_messages: list[Any],
     scenario_dir: str,
     judge_model: str,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """Run the EFF judge and persist results.  Returns the metric dict."""
     from judge_utils import build_context_block, build_item_checklist, call_judge, save_metric
@@ -205,6 +206,7 @@ async def compute_and_save_eff(
         system_prompt=EFF_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         response_model=EFFJudgeResponse,
+        reasoning_effort=reasoning_effort,
     )
 
     results = compute_eff_scores(response)

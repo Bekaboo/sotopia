@@ -431,11 +431,12 @@ async def amain(args: argparse.Namespace) -> None:
                 from aggregate_new_llm import aggregate_new_llm_metrics  # type: ignore
 
                 judge = args.judge_model or env_model
+                re = args.judge_reasoning_effort
                 results = await asyncio.gather(
-                    compute_and_save_da(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge),
-                    compute_and_save_ia(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge),
-                    compute_and_save_eff(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge),
-                    compute_and_save_cpv(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge),
+                    compute_and_save_da(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
+                    compute_and_save_ia(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
+                    compute_and_save_eff(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
+                    compute_and_save_cpv(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
                     return_exceptions=True,
                 )
                 for r in results:
@@ -478,6 +479,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--metrics", action="store_true", help="Attempt to run external metric modules if available")
     p.add_argument("--batch-size", type=int, default=5, help="Number of scenarios to run per batch (default 5). Lower to avoid rate limits.")
+    p.add_argument("--judge-reasoning-effort", type=str, choices=["none", "low", "medium", "high", "xhigh"], default=None, help="Reasoning effort for judge model (none/low/medium/high/xhigh). xhigh only for gpt-5.2-pro.")
     return p.parse_args()
 
 

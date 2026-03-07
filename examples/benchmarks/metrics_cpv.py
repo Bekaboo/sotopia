@@ -155,6 +155,7 @@ async def compute_and_save_cpv(
     flat_messages: list[Any],
     scenario_dir: str,
     judge_model: str,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """Run the CPV judge and persist results.  Returns the metric dict."""
     from judge_utils import build_context_block, build_item_checklist, call_judge, save_metric
@@ -195,6 +196,7 @@ async def compute_and_save_cpv(
         system_prompt=CPV_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         response_model=CPVJudgeResponse,
+        reasoning_effort=reasoning_effort,
     )
 
     results = compute_cpv_scores(response, spec)

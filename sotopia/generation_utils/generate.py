@@ -168,6 +168,7 @@ async def agenerate(
     bad_output_process_model: str | None = None,
     use_fixed_model_version: bool = True,
     context: dict[str, Any] | None = None,
+    **extra_completion_kwargs: Any,
 ) -> OutputType:
     """
     Generate text using LiteLLM with optional structured output support.
@@ -261,6 +262,7 @@ async def agenerate(
             "drop_params": True,  # litellm automatically drops unsupported params
             "base_url": base_url,
             "api_key": api_key,
+            **extra_completion_kwargs,
         }
         if temperature_value is not None:
             completion_kwargs["temperature"] = temperature_value
@@ -273,6 +275,7 @@ async def agenerate(
             "drop_params": True,  # litellm automatically drops unsupported params
             "base_url": base_url,
             "api_key": api_key,
+            **extra_completion_kwargs,
         }
         if temperature_value is not None:
             completion_kwargs["temperature"] = temperature_value

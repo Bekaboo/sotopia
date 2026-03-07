@@ -162,6 +162,7 @@ async def compute_and_save_ia(
     flat_messages: list[Any],
     scenario_dir: str,
     judge_model: str,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     """Run the IA judge and persist results.  Returns the metric dict."""
     from judge_utils import build_context_block, build_item_checklist, call_judge, save_metric
@@ -201,6 +202,7 @@ async def compute_and_save_ia(
         system_prompt=IA_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         response_model=IAJudgeResponse,
+        reasoning_effort=reasoning_effort,
     )
 
     results = compute_ia_scores(response)

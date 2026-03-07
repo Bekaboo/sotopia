@@ -194,6 +194,7 @@ async def call_judge(
     user_prompt: str,
     response_model: Type[T],
     temperature: float = 0.0,
+    reasoning_effort: str | None = None,
 ) -> T:
     """Send a single LLM-as-Judge request and return a validated Pydantic model.
 
@@ -211,7 +212,16 @@ async def call_judge(
     # curly braces that may appear inside transcript content.
     template = "{prompt_text}\n\n{format_instructions}"
 
+    # When reasoning_effort is active (not None and not "none"),
+    # temperature is incompatible and must not be sent.
+    use_temperature: float | None = temperature
+    if reasoning_effort is not None and reasoning_effort != "none":
+        use_temperature = None
+
     last_exc: Exception | None = None
+    extra_kwargs: dict[str, Any] = {}
+    if reasoning_effort is not None:
+        extra_kwargs["reasoning_effort"] = reasoning_effort
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             result: T = await agenerate(
@@ -219,8 +229,9 @@ async def call_judge(
                 template=template,
                 input_values={"prompt_text": full_prompt},
                 output_parser=PydanticOutputParser[response_model](pydantic_object=response_model),
-                temperature=temperature,
+                temperature=use_temperature,
                 structured_output=True,
+                **extra_kwargs,
             )
             return result
         except Exception as exc:
