@@ -51,11 +51,23 @@ class PrivacyRisk(BaseModel):
     description: str
 
 
+class SharingProgress(BaseModel):
+    """Tracks what the agent has/hasn't shared and acquired."""
+    model_config = ConfigDict(extra="forbid")
+
+    items_shared: list[str]
+    items_not_yet_shared: list[str]
+    items_acquired: list[str]
+    items_still_needed: list[str]
+    objective_progress: str
+
+
 class BeliefState(BaseModel):
     """Complete belief state for one agent."""
     model_config = ConfigDict(extra="forbid")
 
     beliefs: list[AgentBelief]
+    sharing_progress: SharingProgress
     memory: list[MemoryItem]
     privacy_risks: list[PrivacyRisk]
 
@@ -80,6 +92,13 @@ For each other agent mentioned in the scenario, create an AgentBelief with:
 - wants: list of their probable goals based on their role
 - thinks_about_me: list of what they probably assume about this agent
 
+For sharing_progress, analyze the agent's goals and pre_interaction_knowledge:
+- items_shared: [] (nothing shared yet)
+- items_not_yet_shared: list ALL items from 'MAY share' that the agent could share
+- items_acquired: [] (nothing acquired yet)
+- items_still_needed: list ALL items the agent needs to acquire per their objective
+- objective_progress: "Not started"
+
 Set memory to an empty list and privacy_risks to an empty list.
 
 Be concise — each list item should be one short sentence.\
@@ -95,19 +114,28 @@ You will receive:
 3. NEW MESSAGES since the last update
 
 Produce an UPDATED belief state as structured JSON by:
+
+## Beliefs about others
 - Revising each AgentBelief's knows/does_not_know/wants/thinks_about_me \
 based on what the other agents just said or asked.
-- Adding important new events to the memory list (keep at most {max_memory} \
-items — drop the oldest/least important if needed).
-- Adding privacy risks to privacy_risks if anyone probed for restricted \
-info or if information leaked (keep at most {max_risks} items).
+
+## Sharing progress (CRITICAL — this drives the agent's behavior)
+- Move items from items_not_yet_shared to items_shared when the agent shared them.
+- Move items from items_still_needed to items_acquired when the agent received them.
+- Update objective_progress honestly: "Not started" / "In progress" / \
+"Mostly complete" / "Complete — ready to leave".
+- BE HONEST: if information was exchanged, reflect it immediately.
+
+## Memory & risks
+- Adding important new events to memory (keep at most {max_memory} items).
+- Adding privacy risks if anyone probed for restricted info (keep at most {max_risks}).
 
 RULES:
 - If a belief has NOT changed, keep the previous entries.
 - Remove items from does_not_know if they were answered in new messages.
-- Add newly revealed facts to knows.
 - Each list item = one short sentence.
-- Do NOT add duplicate entries that are semantically identical to existing ones.\
+- Do NOT add duplicate entries that are semantically identical to existing ones.
+- Focus on PROGRESS: the agent needs to know what to share next, not just what to protect.\
 """
 
 
@@ -117,27 +145,39 @@ def render_belief_state(state: BeliefState) -> str:
     """Render a BeliefState to clean readable text for agent context injection."""
     lines: list[str] = []
 
-    lines.append("## Beliefs About Others")
+    # Sharing progress first — this is what drives behavior
+    sp = state.sharing_progress
+    lines.append("## Your Progress")
+    lines.append(f"  Objective status: {sp.objective_progress}")
+    if sp.items_still_needed:
+        lines.append(f"  STILL NEED: {'; '.join(sp.items_still_needed)}")
+    else:
+        lines.append("  STILL NEED: (nothing — objective met!)")
+    if sp.items_not_yet_shared:
+        lines.append(f"  CAN STILL SHARE: {'; '.join(sp.items_not_yet_shared)}")
+    else:
+        lines.append("  CAN STILL SHARE: (all shareable items shared)")
+    if sp.items_acquired:
+        lines.append(f"  ACQUIRED: {'; '.join(sp.items_acquired)}")
+    if sp.items_shared:
+        lines.append(f"  SHARED: {'; '.join(sp.items_shared)}")
+
+    lines.append("\n## Beliefs About Others")
     for b in state.beliefs:
         lines.append(f"### {b.agent_name}")
         lines.append(f"  KNOWS: {'; '.join(b.knows) if b.knows else '(nothing yet)'}")
-        lines.append(f"  DOES NOT KNOW: {'; '.join(b.does_not_know) if b.does_not_know else '(nothing flagged)'}")
         lines.append(f"  WANTS: {'; '.join(b.wants) if b.wants else '(unclear)'}")
         lines.append(f"  THINKS ABOUT ME: {'; '.join(b.thinks_about_me) if b.thinks_about_me else '(unknown)'}")
 
-    lines.append("\n## Memory Buffer")
     if state.memory:
+        lines.append("\n## Key Events")
         for m in state.memory:
             lines.append(f"  [Turn {m.turn}] {m.event}")
-    else:
-        lines.append("  (empty)")
 
-    lines.append("\n## Privacy Risk Log")
     if state.privacy_risks:
+        lines.append("\n## Privacy Risks")
         for r in state.privacy_risks:
             lines.append(f"  [Turn {r.turn}] {r.description}")
-    else:
-        lines.append("  (none)")
 
     return "\n".join(lines)
 
@@ -151,7 +191,16 @@ class BeliefTracker:
         self.agent_name = agent_name
         self.model_name = model_name
         self.state: BeliefState = BeliefState(
-            beliefs=[], memory=[], privacy_risks=[]
+            beliefs=[],
+            sharing_progress=SharingProgress(
+                items_shared=[],
+                items_not_yet_shared=[],
+                items_acquired=[],
+                items_still_needed=[],
+                objective_progress="Not started",
+            ),
+            memory=[],
+            privacy_risks=[],
         )
         self._initialized: bool = False
         self._last_inbox_len: int = 0

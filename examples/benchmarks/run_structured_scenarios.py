@@ -140,6 +140,7 @@ def build_env_and_agents(
     action_order: Literal["simultaneous", "round-robin", "random"] = "round-robin",
     prompt_mode: PromptMode = "basic",
     disable_terminal_eval: bool = False,
+    max_turns: int = 20,
 ):
     tag = f"scenario_{spec['scenario_id']}"
 
@@ -154,7 +155,7 @@ def build_env_and_agents(
     sim_env = ParallelSotopiaEnv(
         model_name=env_model,
         action_order=action_order,
-        evaluators=[RuleBasedTerminatedEvaluator(max_turn_number=60, max_stale_turn=6)],
+        evaluators=[RuleBasedTerminatedEvaluator(max_turn_number=max_turns, max_stale_turn=4)],
         terminal_evaluators=(
             []
             if disable_terminal_eval
@@ -379,6 +380,7 @@ async def amain(args: argparse.Namespace) -> None:
                 action_order=args.action_order,  # type: ignore[arg-type]
                 prompt_mode=cast(PromptMode, args.prompt_mode),
                 disable_terminal_eval=args.disable_terminal_eval,
+                max_turns=args.max_turns,
             )
         )
 
@@ -479,6 +481,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--metrics", action="store_true", help="Attempt to run external metric modules if available")
     p.add_argument("--batch-size", type=int, default=5, help="Number of scenarios to run per batch (default 5). Lower to avoid rate limits.")
+    p.add_argument("--max-turns", type=int, default=60, help="Maximum number of turns per simulation (default 60)")
     p.add_argument("--judge-reasoning-effort", type=str, choices=["none", "low", "medium", "high", "xhigh"], default=None, help="Reasoning effort for judge model (none/low/medium/high/xhigh). xhigh only for gpt-5.2-pro.")
     return p.parse_args()
 
