@@ -299,6 +299,18 @@ async def agenerate(
         )
         parsed_result = output_parser.parse(reformat_result, **parse_kwargs)
 
+    # Detect schema parroting: if the argument contains the JSON schema
+    # definition, the model echoed the format instructions instead of
+    # generating real content.  Replace with a generic fallback.
+    if isinstance(parsed_result, AgentAction) and parsed_result.argument:
+        _arg = parsed_result.argument
+        if '"additionalProperties"' in _arg and '"properties"' in _arg and '"required"' in _arg:
+            parsed_result = AgentAction(
+                action_type="none",
+                argument="",
+                to=[],
+            )
+
     # Include agent name in logs if available
     agent_name = input_values.get("agent", "")
     log_prefix = f" [{agent_name}]" if agent_name else ""
