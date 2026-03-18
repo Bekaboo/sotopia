@@ -190,6 +190,11 @@ class BeliefTracker:
     def __init__(self, agent_name: str, model_name: str) -> None:
         self.agent_name = agent_name
         self.model_name = model_name
+        # Open-source models don't reliably support structured_output
+        self._use_structured = not any(
+            model_name.startswith(p)
+            for p in ("together_ai/", "anthropic/", "huggingface/", "ollama/", "replicate/")
+        )
         self.state: BeliefState = BeliefState(
             beliefs=[],
             sharing_progress=SharingProgress(
@@ -232,7 +237,7 @@ class BeliefTracker:
                     pydantic_object=BeliefState
                 ),
                 temperature=0.2,
-                structured_output=True,
+                structured_output=self._use_structured,
             )
             self.state = result
         except Exception:
@@ -297,7 +302,7 @@ class BeliefTracker:
                     pydantic_object=BeliefState
                 ),
                 temperature=0.2,
-                structured_output=True,
+                structured_output=self._use_structured,
             )
             # Enforce hard caps
             result.memory = result.memory[-MAX_MEMORY_ITEMS:]

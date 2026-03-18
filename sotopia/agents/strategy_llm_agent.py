@@ -192,6 +192,14 @@ class StrategyLLMAgent(LLMAgent):
 
         augmented_history = guidance + tom_note_block + "\n\n" + base_history
 
+        # Open-source models via together_ai/etc. don't support structured_output
+        # reliably — they parrot the JSON schema instead of generating content.
+        # Only use structured_output for OpenAI models.
+        use_structured = not any(
+            self.model_name.startswith(p)
+            for p in ("together_ai/", "anthropic/", "huggingface/", "ollama/", "replicate/")
+        )
+
         action = await agenerate_action(
             self.model_name,
             history=augmented_history,
@@ -200,7 +208,7 @@ class StrategyLLMAgent(LLMAgent):
             agent=self.agent_name or "",
             goal=self.goal,
             script_like=self.script_like,
-            structured_output=True,
+            structured_output=use_structured,
             agent_names=agent_names,
             sender=self.agent_name,
         )
