@@ -200,20 +200,6 @@ class StrategyLLMAgent(LLMAgent):
             for p in ("together_ai/", "anthropic/", "huggingface/", "ollama/", "replicate/")
         )
 
-        # For non-OpenAI models, override format_instructions in the history
-        # to avoid injecting the raw JSON schema (which models parrot back).
-        if not _is_openai:
-            _simple_fmt = (
-                'Respond with ONLY a JSON object in this exact format (no other text):\n'
-                '{"action_type": "<one of: ' + ", ".join(obs.available_actions) + '>", '
-                '"argument": "<your message text>", '
-                '"to": [<recipient names or empty list for public>]}\n'
-                'Example: {"action_type": "speak", "argument": "Hello everyone.", "to": []}'
-            )
-            # Inject the simple format instructions directly into the history
-            # so they replace the schema that would otherwise be injected
-            augmented_history = augmented_history + "\n\n" + _simple_fmt
-
         action = await agenerate_action(
             self.model_name,
             history=augmented_history,
