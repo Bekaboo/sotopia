@@ -195,10 +195,24 @@ class StrategyLLMAgent(LLMAgent):
         # Open-source models via together_ai/etc. don't support structured_output
         # reliably — they parrot the JSON schema instead of generating content.
         # Only use structured_output for OpenAI models.
-        use_structured = not any(
+        _is_openai = not any(
             self.model_name.startswith(p)
             for p in ("together_ai/", "anthropic/", "huggingface/", "ollama/", "replicate/")
         )
+
+        # For non-OpenAI models, override format_instructions in the history
+        # to avoid injecting the raw JSON schema (which models parrot back).
+        if not _is_openai:
+            _simple_fmt = (
+                'Respond with ONLY a JSON object in this exact format (no other text):\n'
+                '{"action_type": "<one of: ' + ", ".join(obs.available_actions) + '>", '
+                '"argument": "<your message text>", '
+                '"to": [<recipient names or empty list for public>]}\n'
+                'Example: {"action_type": "speak", "argument": "Hello everyone.", "to": []}'
+            )
+            # Inject the simple format instructions directly into the history
+            # so they replace the schema that would otherwise be injected
+            augmented_history = augmented_history + "\n\n" + _simple_fmt
 
         action = await agenerate_action(
             self.model_name,
@@ -208,7 +222,7 @@ class StrategyLLMAgent(LLMAgent):
             agent=self.agent_name or "",
             goal=self.goal,
             script_like=self.script_like,
-            structured_output=use_structured,
+            structured_output=_is_openai,
             agent_names=agent_names,
             sender=self.agent_name,
         )

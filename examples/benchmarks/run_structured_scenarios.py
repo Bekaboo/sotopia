@@ -152,14 +152,21 @@ def build_env_and_agents(
 
     env = to_environment_profile(spec, agent_goals, tag=tag)
 
+    # Auto-disable terminal eval for non-OpenAI env models (structured output not supported)
+    _env_is_openai = not any(
+        env_model.startswith(p)
+        for p in ("together_ai/", "anthropic/", "huggingface/", "ollama/", "replicate/")
+    )
+    use_terminal_eval = (not disable_terminal_eval) and _env_is_openai
+
     sim_env = ParallelSotopiaEnv(
         model_name=env_model,
         action_order=action_order,
         evaluators=[RuleBasedTerminatedEvaluator(max_turn_number=max_turns, max_stale_turn=4)],
         terminal_evaluators=(
-            []
-            if disable_terminal_eval
-            else [EpisodeLLMEvaluator(env_model, EvaluationForAgents[SotopiaDimensions])]
+            [EpisodeLLMEvaluator(env_model, EvaluationForAgents[SotopiaDimensions])]
+            if use_terminal_eval
+            else []
         ),
         env_profile=env,
     )

@@ -430,15 +430,26 @@ async def agenerate_action(
             if sender is not None:
                 validation_context["sender"] = sender
 
+        # When not using structured_output, provide simple human-readable
+        # format instructions instead of the raw JSON schema.
+        # Open-source models tend to parrot the schema back if it's included.
+        input_values: dict[str, str] = dict(
+            agent=agent,
+            turn_number=str(turn_number),
+            history=history,
+            action_list=" ".join(action_types),
+        )
+        if not structured_output:
+            input_values["format_instructions"] = (
+                '{"action_type": "<one of: '
+                + ", ".join(action_types)
+                + '>", "argument": "<your message>", "to": [<recipient names or empty list>]}'
+            )
+
         return await agenerate(
             model_name=model_name,
             template=template,
-            input_values=dict(
-                agent=agent,
-                turn_number=str(turn_number),
-                history=history,
-                action_list=" ".join(action_types),
-            ),
+            input_values=input_values,
             output_parser=PydanticOutputParser(pydantic_object=AgentAction),
             temperature=temperature,
             structured_output=structured_output,
