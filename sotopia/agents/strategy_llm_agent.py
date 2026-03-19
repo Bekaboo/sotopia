@@ -28,6 +28,7 @@ def _guidance_for_mode(
             "Set 'to' = [] for public messages. "
             f"Use PRIVATE ('to' = subset of valid names) to message specific participants.{names_note} "
             "You may use action_type 'leave' to exit the conversation when you believe the discussion is complete. "
+            "Keep your spoken message brief and natural — 1 to 3 sentences max. "
             "Only output the final JSON action that follows the provided schema."
         )
 
@@ -47,6 +48,7 @@ def _guidance_for_mode(
             "Default to PUBLIC messages (set 'to' = []). "
             "Use PRIVATE ('to' = subset of valid names) only for sensitive content. "
             f"Never reveal items from 'MUST NOT share'.{names_note} "
+            "Keep your spoken message brief and natural — 1 to 3 sentences max. "
             "Only output the final JSON action that follows the provided schema."
         )
 
@@ -91,6 +93,7 @@ def _guidance_for_mode(
         "Default to PUBLIC messages (set 'to' = []). "
         "Use PRIVATE ('to' = subset of valid names) only when content sensitivity requires it. "
         f"Never reveal items from 'MUST NOT share'.{names_note} "
+        "Keep your spoken message brief and natural — 1 to 3 sentences max. "
         "Only output the final JSON action that follows the provided schema."
     )
 
