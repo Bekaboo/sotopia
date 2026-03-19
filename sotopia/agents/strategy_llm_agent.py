@@ -28,7 +28,6 @@ def _guidance_for_mode(
             "Set 'to' = [] for public messages. "
             f"Use PRIVATE ('to' = subset of valid names) to message specific participants.{names_note} "
             "You may use action_type 'leave' to exit the conversation when you believe the discussion is complete. "
-            "Keep your spoken message brief and natural — 1 to 3 sentences max. "
             "Only output the final JSON action that follows the provided schema."
         )
 
@@ -48,7 +47,6 @@ def _guidance_for_mode(
             "Default to PUBLIC messages (set 'to' = []). "
             "Use PRIVATE ('to' = subset of valid names) only for sensitive content. "
             f"Never reveal items from 'MUST NOT share'.{names_note} "
-            "Keep your spoken message brief and natural — 1 to 3 sentences max. "
             "Only output the final JSON action that follows the provided schema."
         )
 
@@ -93,7 +91,6 @@ def _guidance_for_mode(
         "Default to PUBLIC messages (set 'to' = []). "
         "Use PRIVATE ('to' = subset of valid names) only when content sensitivity requires it. "
         f"Never reveal items from 'MUST NOT share'.{names_note} "
-        "Keep your spoken message brief and natural — 1 to 3 sentences max. "
         "Only output the final JSON action that follows the provided schema."
     )
 
@@ -167,8 +164,6 @@ class StrategyLLMAgent(LLMAgent):
                 tom_note_block = (
                     "\n\n--- ToM Coach Analysis (for your eyes only — do NOT include "
                     "in your output) ---\n" + tom_note + "\n--- End ToM Analysis ---\n"
-                    "\nStrictly Keep your final spoken message brief and natural (2-3 sentences). "
-                    "Do not narrate your reasoning.\n"
                 )
 
         elif self.prompt_mode == "tom_belief":
@@ -193,8 +188,6 @@ class StrategyLLMAgent(LLMAgent):
                     "do NOT include in your output) ---\n"
                     + belief_state
                     + "\n--- End Belief States ---\n"
-                    "\nStrictly Keep your final spoken message brief and natural (2-3 sentences). "
-                    "Do not narrate your reasoning.\n"
                 )
 
         augmented_history = guidance + tom_note_block + "\n\n" + base_history
