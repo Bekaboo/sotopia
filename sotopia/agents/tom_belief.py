@@ -101,7 +101,10 @@ For sharing_progress, analyze the agent's goals and pre_interaction_knowledge:
 
 Set memory to an empty list and privacy_risks to an empty list.
 
-Be concise — each list item should be one short sentence.\
+IMPORTANT — BE BRIEF:
+- Each list item: max 8 words.
+- Only include items with real content — omit empty lists.
+- Do not restate the scenario background.\
 """
 
 BELIEF_UPDATE_SYSTEM = """\
@@ -135,7 +138,12 @@ RULES:
 - Remove items from does_not_know if they were answered in new messages.
 - Each list item = one short sentence.
 - Do NOT add duplicate entries that are semantically identical to existing ones.
-- Focus on PROGRESS: the agent needs to know what to share next, not just what to protect.\
+- Focus on PROGRESS: the agent needs to know what to share next, not just what to protect.
+
+IMPORTANT — BE BRIEF:
+- Each list item: max 8 words.
+- Only update fields that changed — keep unchanged fields as-is.
+- Do not restate the scenario or goals.\
 """
 
 

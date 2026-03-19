@@ -51,8 +51,12 @@ to leak items from 'MUST NOT share'? Flag specific risks.
 Should it share something, ask for something, use a private channel, or \
 deflect a question?
 
-Keep the note concise (150-250 words). Do not repeat the conversation. \
-Focus on actionable social reasoning.\
+IMPORTANT — KEEP IT SHORT:
+- Total length: 100-150 words maximum.
+- Use bullet points, not paragraphs.
+- Do not repeat the conversation or restate the agent's goals.
+- Skip sections that have nothing new to report.
+- Focus on actionable social reasoning only.\
 """
 
 

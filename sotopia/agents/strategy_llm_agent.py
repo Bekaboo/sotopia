@@ -164,6 +164,8 @@ class StrategyLLMAgent(LLMAgent):
                 tom_note_block = (
                     "\n\n--- ToM Coach Analysis (for your eyes only — do NOT include "
                     "in your output) ---\n" + tom_note + "\n--- End ToM Analysis ---\n"
+                    "\nKeep your spoken message brief and natural (2-3 sentences). "
+                    "Do not narrate your reasoning.\n"
                 )
 
         elif self.prompt_mode == "tom_belief":
@@ -188,6 +190,8 @@ class StrategyLLMAgent(LLMAgent):
                     "do NOT include in your output) ---\n"
                     + belief_state
                     + "\n--- End Belief States ---\n"
+                    "\nKeep your spoken message brief and natural (2-3 sentences). "
+                    "Do not narrate your reasoning.\n"
                 )
 
         augmented_history = guidance + tom_note_block + "\n\n" + base_history
