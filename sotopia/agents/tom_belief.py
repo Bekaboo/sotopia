@@ -101,10 +101,7 @@ For sharing_progress, analyze the agent's goals and pre_interaction_knowledge:
 
 Set memory to an empty list and privacy_risks to an empty list.
 
-IMPORTANT — BE BRIEF:
-- Each list item: max 8 words.
-- Only include items with real content — omit empty lists.
-- Do not restate the scenario background.\
+Be concise — each list item should be one short sentence.\
 """
 
 BELIEF_UPDATE_SYSTEM = """\
@@ -138,12 +135,7 @@ RULES:
 - Remove items from does_not_know if they were answered in new messages.
 - Each list item = one short sentence.
 - Do NOT add duplicate entries that are semantically identical to existing ones.
-- Focus on PROGRESS: the agent needs to know what to share next, not just what to protect.
-
-IMPORTANT — BE BRIEF:
-- Each list item: max 8 words.
-- Only update fields that changed — keep unchanged fields as-is.
-- Do not restate the scenario or goals.\
+- Focus on PROGRESS: the agent needs to know what to share next, not just what to protect.\
 """
 
 
@@ -198,11 +190,7 @@ class BeliefTracker:
     def __init__(self, agent_name: str, model_name: str) -> None:
         self.agent_name = agent_name
         self.model_name = model_name
-        # Open-source models don't reliably support structured_output
-        self._use_structured = not any(
-            model_name.startswith(p)
-            for p in ("together_ai/", "anthropic/", "huggingface/", "ollama/", "replicate/")
-        )
+        self._use_structured = True
         self.state: BeliefState = BeliefState(
             beliefs=[],
             sharing_progress=SharingProgress(
