@@ -5,20 +5,25 @@ from typing import Literal, cast
 from sotopia.agents.llm_agent import LLMAgent
 from sotopia.agents.tom_belief import BeliefTracker
 from sotopia.agents.tom_coach import generate_tom_note
+from sotopia.agents.tom_scratchpad import ScratchpadTracker
 from sotopia.database import AgentProfile
 from sotopia.generation_utils.generate import agenerate_action, agenerate_goal
 from sotopia.messages import AgentAction, Observation
 from sotopia.messages.message_classes import ScriptBackground
 
 
-PromptMode = Literal["basic", "cot", "tom", "tom_coach", "tom_belief"]
+PromptMode = Literal["basic", "cot", "tom", "tom_coach", "tom_belief", "tom_scratchpad"]
 
 
 def _guidance_for_mode(
     mode: PromptMode, agent_name: str | None, allowed_names: list[str] | None
 ) -> str:
     who = agent_name or "You"
-    names_note = f" Valid recipient names: {allowed_names}. Do not include yourself in 'to'." if allowed_names else ""
+    names_note = (
+        f" Valid recipient names: {allowed_names}. Do not include yourself in 'to'."
+        if allowed_names
+        else ""
+    )
 
     if mode == "basic":
         # Neutral task-focused framing. No active security reasoning.
@@ -121,6 +126,7 @@ class StrategyLLMAgent(LLMAgent):
         )
         self.prompt_mode: PromptMode = prompt_mode
         self._belief_tracker: BeliefTracker | None = None
+        self._scratchpad_tracker: ScratchpadTracker | None = None
 
     async def aact(self, obs: Observation) -> AgentAction:
         # mirror LLMAgent.aact, but inject mode-specific guidance into history
@@ -137,7 +143,9 @@ class StrategyLLMAgent(LLMAgent):
 
         # Use agent names from script_background if available
         agent_names = (
-            self.script_background.agent_names if self.script_background is not None else None
+            self.script_background.agent_names
+            if self.script_background is not None
+            else None
         )
 
         # Build base history
@@ -145,7 +153,7 @@ class StrategyLLMAgent(LLMAgent):
 
         # Determine effective mode for guidance text
         effective_mode = self.prompt_mode
-        if effective_mode in ("tom_coach", "tom_belief"):
+        if effective_mode in ("tom_coach", "tom_belief", "tom_scratchpad"):
             effective_mode = "tom"
         guidance = _guidance_for_mode(effective_mode, self.agent_name, agent_names)
 
@@ -188,6 +196,29 @@ class StrategyLLMAgent(LLMAgent):
                     "do NOT include in your output) ---\n"
                     + belief_state
                     + "\n--- End Belief States ---\n"
+                )
+
+        elif self.prompt_mode == "tom_scratchpad":
+            if self._scratchpad_tracker is None:
+                self._scratchpad_tracker = ScratchpadTracker(
+                    agent_name=self.agent_name or "Agent",
+                    model_name=self.model_name,
+                )
+            if not self._scratchpad_tracker._initialized:
+                await self._scratchpad_tracker.initialize(
+                    background=self.inbox[0][1].to_natural_language(),
+                    agent_goal=self.goal,
+                )
+            scratchpad_state = await self._scratchpad_tracker.update(
+                agent_goal=self.goal,
+                inbox=self.inbox,
+            )
+            if scratchpad_state:
+                tom_note_block = (
+                    "\n\n--- Your Task Scratchpad & Memory (for your eyes only — "
+                    "do NOT include in your output) ---\n"
+                    + scratchpad_state
+                    + "\n--- End Task Scratchpad ---\n"
                 )
 
         augmented_history = guidance + tom_note_block + "\n\n" + base_history

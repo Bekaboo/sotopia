@@ -10,6 +10,7 @@ Notes
 - This script focuses on running simulations and writing transcripts and per-agent views.
 - Metrics are optional; if you pass --metrics and the metric modules are importable, they will run.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -65,7 +66,9 @@ def build_goal_text(agent: AgentSpec) -> str:
     role = agent["role"]
     primary = agent["goals"].get("primary_objective", "")
     sharing = agent["goals"].get("sharing_policy", {})
-    pre_json = json.dumps(agent["pre_interaction_knowledge"], indent=2, ensure_ascii=False)
+    pre_json = json.dumps(
+        agent["pre_interaction_knowledge"], indent=2, ensure_ascii=False
+    )
     share_list = sharing.get("what_to_share", [])
     not_share_list = sharing.get("what_not_to_share", [])
 
@@ -85,7 +88,9 @@ def build_goal_text(agent: AgentSpec) -> str:
     lines.extend([f"  • {item}" for item in not_share_list] or ["  • (none specified)"])
     lines.append("")
     lines.append("REMINDER:")
-    lines.append("- Use PRIVATE channel ('to' field) for sensitive topics; public if 'to' is empty.")
+    lines.append(
+        "- Use PRIVATE channel ('to' field) for sensitive topics; public if 'to' is empty."
+    )
     lines.append("- Respect policy: never disclose items in 'MUST NOT share'.")
 
     return "\n".join(lines)
@@ -115,7 +120,9 @@ def to_agent_profile(agent: AgentSpec, tag: str) -> AgentProfile:
     return profile
 
 
-def to_environment_profile(spec: ScenarioSpec, agent_goals: list[str], tag: str) -> EnvironmentProfile:
+def to_environment_profile(
+    spec: ScenarioSpec, agent_goals: list[str], tag: str
+) -> EnvironmentProfile:
     scenario_text = (
         f"Scenario Objective: {spec['scenario_goal']}\n"
         "Knowledge domain ownership (JSON):\n"
@@ -162,7 +169,9 @@ def build_env_and_agents(
     sim_env = ParallelSotopiaEnv(
         model_name=env_model,
         action_order=action_order,
-        evaluators=[RuleBasedTerminatedEvaluator(max_turn_number=max_turns, max_stale_turn=4)],
+        evaluators=[
+            RuleBasedTerminatedEvaluator(max_turn_number=max_turns, max_stale_turn=4)
+        ],
         terminal_evaluators=(
             [EpisodeLLMEvaluator(env_model, EvaluationForAgents[SotopiaDimensions])]
             if use_terminal_eval
@@ -172,7 +181,9 @@ def build_env_and_agents(
     )
 
     agents_list = [
-        StrategyLLMAgent(agent_profile=ap, model_name=agent_model, prompt_mode=prompt_mode)
+        StrategyLLMAgent(
+            agent_profile=ap, model_name=agent_model, prompt_mode=prompt_mode
+        )
         for ap in agent_profiles
     ]
     return sim_env, agents_list
@@ -181,11 +192,19 @@ def build_env_and_agents(
 def flatten_episode(episode: list[Any]) -> list[tuple[str, str, object]]:
     flat: list[tuple[str, str, object]] = []
     for item in episode:
-        if isinstance(item, (list, tuple)) and len(item) == 3 and isinstance(item[0], str):
+        if (
+            isinstance(item, (list, tuple))
+            and len(item) == 3
+            and isinstance(item[0], str)
+        ):
             flat.append(item)  # type: ignore[arg-type]
         elif isinstance(item, list):
             for sub in item:
-                if isinstance(sub, (list, tuple)) and len(sub) == 3 and isinstance(sub[0], str):
+                if (
+                    isinstance(sub, (list, tuple))
+                    and len(sub) == 3
+                    and isinstance(sub[0], str)
+                ):
                     flat.append(sub)  # type: ignore[arg-type]
     return flat
 
@@ -196,7 +215,7 @@ def write_scenario_outputs(
     flat: list[tuple[str, str, object]],
     out_dir: str,
 ) -> None:
-    scenario_dir = os.path.join(out_dir, str(spec['scenario_id']))
+    scenario_dir = os.path.join(out_dir, str(spec["scenario_id"]))
     _ensure_dir(scenario_dir)
 
     # Save the scenario spec so downstream tools (aggregator) can read it
@@ -255,7 +274,9 @@ def write_scenario_outputs(
     class Utterance:
         __slots__ = ("sender", "action_type", "to", "argument")
 
-        def __init__(self, sender: str, action_type: str, to: list[str] | None, argument: str):
+        def __init__(
+            self, sender: str, action_type: str, to: list[str] | None, argument: str
+        ):
             self.sender = sender
             self.action_type = action_type
             self.to = to or []
@@ -277,10 +298,16 @@ def write_scenario_outputs(
                     current_utts = []
                 last_seen_turn = tn
             continue
-        if receiver == "Environment" and sender != "Environment" and isinstance(msg, AgentAction):
+        if (
+            receiver == "Environment"
+            and sender != "Environment"
+            and isinstance(msg, AgentAction)
+        ):
             if msg.action_type == "none":
                 continue
-            current_utts.append(Utterance(sender, msg.action_type, msg.to, msg.argument))
+            current_utts.append(
+                Utterance(sender, msg.action_type, msg.to, msg.argument)
+            )
     if current_utts:
         sim_turn_utterances.append(current_utts)
 
@@ -300,7 +327,9 @@ def write_scenario_outputs(
         agent_list_str = ", ".join(
             f"{idx + 1}={name}" for idx, name in enumerate(agent_names_ordered)
         )
-        f.write(f"[SCENARIO] id={spec['scenario_id']} | sector={spec.get('sector', '?')} | agents={num_agents} | rounds={len(rounds)}\n")
+        f.write(
+            f"[SCENARIO] id={spec['scenario_id']} | sector={spec.get('sector', '?')} | agents={num_agents} | rounds={len(rounds)}\n"
+        )
         f.write(f"[AGENTS] {agent_list_str}\n")
         f.write(f"[GOAL] {spec['scenario_goal']}\n")
         f.write("\n")
@@ -311,17 +340,21 @@ def write_scenario_outputs(
             for r_idx, round_utts in enumerate(rounds):
                 for u_idx, utt in enumerate(round_utts):
                     tag = f"[R{r_idx}.{u_idx + 1}]"
-                    f.write(f"{tag} {utt.sender} ({utt.action_type}, {utt.visibility}): {utt.argument}\n")
+                    f.write(
+                        f"{tag} {utt.sender} ({utt.action_type}, {utt.visibility}): {utt.argument}\n"
+                    )
                 f.write("\n")
 
     # ── Per-agent filtered views (same citable IDs) ──────────────────
     views_dir = os.path.join(scenario_dir, "views")
     _ensure_dir(views_dir)
     for viewer in agent_names_ordered:
-        safe_name = viewer.replace(' ', '_').replace('/', '_').lower()
+        safe_name = viewer.replace(" ", "_").replace("/", "_").lower()
         view_path = os.path.join(views_dir, f"{safe_name}_view.txt")
         with open(view_path, "w") as vf:
-            vf.write(f"[VIEW] agent={viewer} | scenario_id={spec['scenario_id']} | rounds={len(rounds)}\n\n")
+            vf.write(
+                f"[VIEW] agent={viewer} | scenario_id={spec['scenario_id']} | rounds={len(rounds)}\n\n"
+            )
             for r_idx, round_utts in enumerate(rounds):
                 header_written = False
                 for u_idx, utt in enumerate(round_utts):
@@ -335,7 +368,9 @@ def write_scenario_outputs(
                             vf.write(f"--- Round {r_idx} ---\n")
                             header_written = True
                         tag = f"[R{r_idx}.{u_idx + 1}]"
-                        vf.write(f"{tag} {utt.sender} ({utt.action_type}, {utt.visibility}): {utt.argument}\n")
+                        vf.write(
+                            f"{tag} {utt.sender} ({utt.action_type}, {utt.visibility}): {utt.argument}\n"
+                        )
                 if header_written:
                     vf.write("\n")
 
@@ -359,11 +394,15 @@ async def amain(args: argparse.Namespace) -> None:
         sid = int(args.scenario_id)
         scenarios = [s for s in scenarios if int(s.get("scenario_id", -1)) == sid]
         if not scenarios:
-            raise SystemExit(f"No scenario with scenario_id={sid} found in {args.json}.")
+            raise SystemExit(
+                f"No scenario with scenario_id={sid} found in {args.json}."
+            )
 
     if args.max_scenarios is not None:
         scenarios = scenarios[: args.max_scenarios]
-        print(f"Limiting to first {args.max_scenarios} scenarios ({len(scenarios)} loaded).")
+        print(
+            f"Limiting to first {args.max_scenarios} scenarios ({len(scenarios)} loaded)."
+        )
 
     out_dir = args.out_dir or os.path.dirname(os.path.abspath(args.json))
     _ensure_dir(out_dir)
@@ -403,7 +442,9 @@ async def amain(args: argparse.Namespace) -> None:
         batch_num = batch_start // batch_size + 1
         total_batches = (len(scenarios) + batch_size - 1) // batch_size
         print(f"\n{'='*60}")
-        print(f"Running batch {batch_num}/{total_batches} (scenarios {batch_start+1}-{batch_start+len(batch_specs)} of {len(scenarios)})")
+        print(
+            f"Running batch {batch_num}/{total_batches} (scenarios {batch_start+1}-{batch_start+len(batch_specs)} of {len(scenarios)})"
+        )
         print(f"{'='*60}")
 
         batch_results = await run_async_server(
@@ -429,7 +470,7 @@ async def amain(args: argparse.Namespace) -> None:
         )
 
         if args.metrics:
-            scenario_dir = os.path.join(eval_root, str(spec['scenario_id']))
+            scenario_dir = os.path.join(eval_root, str(spec["scenario_id"]))
             errors: list[str] = []
             try:
                 from metrics_da import compute_and_save_da  # type: ignore
@@ -442,10 +483,34 @@ async def amain(args: argparse.Namespace) -> None:
                 judge = args.judge_model or env_model
                 re = args.judge_reasoning_effort
                 results = await asyncio.gather(
-                    compute_and_save_da(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
-                    compute_and_save_ia(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
-                    compute_and_save_eff(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
-                    compute_and_save_cpv(spec=spec, flat_messages=flat, scenario_dir=scenario_dir, judge_model=judge, reasoning_effort=re),
+                    compute_and_save_da(
+                        spec=spec,
+                        flat_messages=flat,
+                        scenario_dir=scenario_dir,
+                        judge_model=judge,
+                        reasoning_effort=re,
+                    ),
+                    compute_and_save_ia(
+                        spec=spec,
+                        flat_messages=flat,
+                        scenario_dir=scenario_dir,
+                        judge_model=judge,
+                        reasoning_effort=re,
+                    ),
+                    compute_and_save_eff(
+                        spec=spec,
+                        flat_messages=flat,
+                        scenario_dir=scenario_dir,
+                        judge_model=judge,
+                        reasoning_effort=re,
+                    ),
+                    compute_and_save_cpv(
+                        spec=spec,
+                        flat_messages=flat,
+                        scenario_dir=scenario_dir,
+                        judge_model=judge,
+                        reasoning_effort=re,
+                    ),
                     return_exceptions=True,
                 )
                 for r in results:
@@ -463,11 +528,33 @@ async def amain(args: argparse.Namespace) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Run structured scenarios from JSON (transcripts + optional metrics)")
-    p.add_argument("--json", type=str, required=True, help="Path to JSON file containing scenarios or a single scenario")
-    p.add_argument("--agent-model", type=str, default=None, help="LLM to use for all agents (ENV: AGENT_MODEL)")
-    p.add_argument("--env-model", type=str, default=None, help="LLM to use for environment/evaluator (ENV: ENV_MODEL)")
-    p.add_argument("--out-dir", type=str, default=None, help="Directory to write outputs; default is the JSON's directory")
+    p = argparse.ArgumentParser(
+        description="Run structured scenarios from JSON (transcripts + optional metrics)"
+    )
+    p.add_argument(
+        "--json",
+        type=str,
+        required=True,
+        help="Path to JSON file containing scenarios or a single scenario",
+    )
+    p.add_argument(
+        "--agent-model",
+        type=str,
+        default=None,
+        help="LLM to use for all agents (ENV: AGENT_MODEL)",
+    )
+    p.add_argument(
+        "--env-model",
+        type=str,
+        default=None,
+        help="LLM to use for environment/evaluator (ENV: ENV_MODEL)",
+    )
+    p.add_argument(
+        "--out-dir",
+        type=str,
+        default=None,
+        help="Directory to write outputs; default is the JSON's directory",
+    )
     p.add_argument(
         "--action-order",
         type=str,
@@ -475,21 +562,60 @@ def parse_args() -> argparse.Namespace:
         default="round-robin",
         help="Agent action scheduling policy",
     )
-    p.add_argument("--judge-model", type=str, default=None, help="LLM to use as the judge for terminal evaluation (defaults to --env-model if not set)")
-    p.add_argument("--disable-terminal-eval", action="store_true", help="Disable SotopiaDimensions terminal evaluation at the end of each simulation")
-    p.add_argument("--scenario-id", type=int, default=None, help="If provided, run only the scenario with this id")
-    p.add_argument("--max-scenarios", type=int, default=None, help="If provided, run only the first N scenarios from the dataset")
+    p.add_argument(
+        "--judge-model",
+        type=str,
+        default=None,
+        help="LLM to use as the judge for terminal evaluation (defaults to --env-model if not set)",
+    )
+    p.add_argument(
+        "--disable-terminal-eval",
+        action="store_true",
+        help="Disable SotopiaDimensions terminal evaluation at the end of each simulation",
+    )
+    p.add_argument(
+        "--scenario-id",
+        type=int,
+        default=None,
+        help="If provided, run only the scenario with this id",
+    )
+    p.add_argument(
+        "--max-scenarios",
+        type=int,
+        default=None,
+        help="If provided, run only the first N scenarios from the dataset",
+    )
     p.add_argument(
         "--prompt-mode",
         type=str,
-        choices=["basic", "cot", "tom", "tom_coach", "tom_belief"],
+        choices=["basic", "cot", "tom", "tom_coach", "tom_belief", "tom_scratchpad"],
         default="basic",
-        help="Prompting strategy: basic / CoT / ToM (prompt-only) / ToM-Coach (stateless LLM advisor) / ToM-Belief (stateful belief tracker)",
+        help="Prompting strategy: basic / CoT / ToM (prompt-only) / ToM-Coach (stateless LLM advisor) / ToM-Belief (stateful belief tracker) / ToM-Scratchpad (ablation: generic scratchpad replacing belief slots)",
     )
-    p.add_argument("--metrics", action="store_true", help="Attempt to run external metric modules if available")
-    p.add_argument("--batch-size", type=int, default=5, help="Number of scenarios to run per batch (default 5). Lower to avoid rate limits.")
-    p.add_argument("--max-turns", type=int, default=60, help="Maximum number of turns per simulation (default 60)")
-    p.add_argument("--judge-reasoning-effort", type=str, choices=["none", "low", "medium", "high", "xhigh"], default=None, help="Reasoning effort for judge model (none/low/medium/high/xhigh). xhigh only for gpt-5.2-pro.")
+    p.add_argument(
+        "--metrics",
+        action="store_true",
+        help="Attempt to run external metric modules if available",
+    )
+    p.add_argument(
+        "--batch-size",
+        type=int,
+        default=5,
+        help="Number of scenarios to run per batch (default 5). Lower to avoid rate limits.",
+    )
+    p.add_argument(
+        "--max-turns",
+        type=int,
+        default=60,
+        help="Maximum number of turns per simulation (default 60)",
+    )
+    p.add_argument(
+        "--judge-reasoning-effort",
+        type=str,
+        choices=["none", "low", "medium", "high", "xhigh"],
+        default=None,
+        help="Reasoning effort for judge model (none/low/medium/high/xhigh). xhigh only for gpt-5.2-pro.",
+    )
     return p.parse_args()
 
 
