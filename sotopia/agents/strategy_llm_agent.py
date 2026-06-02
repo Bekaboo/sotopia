@@ -5,13 +5,14 @@ from typing import Literal, cast
 from sotopia.agents.llm_agent import LLMAgent
 from sotopia.agents.tom_belief import BeliefTracker
 from sotopia.agents.tom_coach import generate_tom_note
+from sotopia.agents.self_focused_tracker import SelfFocusedTracker
 from sotopia.database import AgentProfile
 from sotopia.generation_utils.generate import agenerate_action, agenerate_goal
 from sotopia.messages import AgentAction, Observation
 from sotopia.messages.message_classes import ScriptBackground
 
 
-PromptMode = Literal["basic", "cot", "tom", "tom_coach", "tom_belief"]
+PromptMode = Literal["basic", "cot", "tom", "tom_coach", "tom_belief", "self_focused"]
 
 
 def _guidance_for_mode(
@@ -121,6 +122,7 @@ class StrategyLLMAgent(LLMAgent):
         )
         self.prompt_mode: PromptMode = prompt_mode
         self._belief_tracker: BeliefTracker | None = None
+        self._self_focused_tracker: SelfFocusedTracker | None = None
 
     async def aact(self, obs: Observation) -> AgentAction:
         # mirror LLMAgent.aact, but inject mode-specific guidance into history
@@ -145,7 +147,7 @@ class StrategyLLMAgent(LLMAgent):
 
         # Determine effective mode for guidance text
         effective_mode = self.prompt_mode
-        if effective_mode in ("tom_coach", "tom_belief"):
+        if effective_mode in ("tom_coach", "tom_belief", "self_focused"):
             effective_mode = "tom"
         guidance = _guidance_for_mode(effective_mode, self.agent_name, agent_names)
 
@@ -188,6 +190,30 @@ class StrategyLLMAgent(LLMAgent):
                     "do NOT include in your output) ---\n"
                     + belief_state
                     + "\n--- End Belief States ---\n"
+                )
+
+        elif self.prompt_mode == "self_focused":
+            # Ablation: stateful self-focused scratchpad (no other-agent modeling)
+            if self._self_focused_tracker is None:
+                self._self_focused_tracker = SelfFocusedTracker(
+                    agent_name=self.agent_name or "Agent",
+                    model_name=self.model_name,
+                )
+            if not self._self_focused_tracker._initialized:
+                await self._self_focused_tracker.initialize(
+                    background=self.inbox[0][1].to_natural_language(),
+                    agent_goal=self.goal,
+                )
+            self_state = await self._self_focused_tracker.update(
+                agent_goal=self.goal,
+                inbox=self.inbox,
+            )
+            if self_state:
+                tom_note_block = (
+                    "\n\n--- Your Planning State & Memory (for your eyes only — "
+                    "do NOT include in your output) ---\n"
+                    + self_state
+                    + "\n--- End Planning State ---\n"
                 )
 
         augmented_history = guidance + tom_note_block + "\n\n" + base_history

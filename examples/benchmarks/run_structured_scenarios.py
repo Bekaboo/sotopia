@@ -482,9 +482,9 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--prompt-mode",
         type=str,
-        choices=["basic", "cot", "tom", "tom_coach", "tom_belief"],
+        choices=["basic", "cot", "tom", "tom_coach", "tom_belief", "self_focused"],
         default="basic",
-        help="Prompting strategy: basic / CoT / ToM (prompt-only) / ToM-Coach (stateless LLM advisor) / ToM-Belief (stateful belief tracker)",
+        help="Prompting strategy: basic / CoT / ToM (prompt-only) / ToM-Coach (stateless LLM advisor) / ToM-Belief (stateful belief tracker) / Self-Focused (ablation: structured scratchpad without other-agent modeling)",
     )
     p.add_argument("--metrics", action="store_true", help="Attempt to run external metric modules if available")
     p.add_argument("--batch-size", type=int, default=5, help="Number of scenarios to run per batch (default 5). Lower to avoid rate limits.")
